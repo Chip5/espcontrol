@@ -333,7 +333,7 @@ function composeApplicationContext(): ApplicationContext {
   let entityCatalogStorage: Storage | undefined;
   try { entityCatalogStorage = dom.window.localStorage; } catch (_) { entityCatalogStorage = undefined; }
   const entityCatalog = createEntityCatalogClient(entityCatalogStorage, dom.fetch);
-  const pairingHash = dom.window.location.hash.match(/^#espcontrol-pairing=([^&]+)$/);
+  const pairingHash = String(dom.window.location.hash || "").match(/^#espcontrol-pairing=([^&]+)$/);
   if (pairingHash && pairingHash[1]) entityCatalog.importPairing(pairingHash[1]);
   const entityState = createEntityStateFeature({
     actionCardStateEntity: (button) => confirmationOptions.actionCardStateEntity(button),
