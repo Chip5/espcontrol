@@ -62,7 +62,7 @@ export function createEntityCatalogClient(
         if (cached) return cached;
         if (!storage) return null;
         try {
-            const parsed = JSON.parse(storage.getItem(STORAGE_KEY) || "null");
+            const parsed = JSON.parse(storage.getItem(STORAGE_KEY) || "{}");
             if (!parsed || typeof parsed.baseUrl !== "string" || typeof parsed.deviceId !== "string" || typeof parsed.token !== "string") return null;
             cached = parsed as EntityCatalogPairing;
             return cached;
