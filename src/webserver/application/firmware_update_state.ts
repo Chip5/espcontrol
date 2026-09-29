@@ -39,7 +39,7 @@ export function createFirmwareUpdateFeature(
     firmwareVersion: FirmwareVersionFeature,
     dependencies: {
         postInstall(): void;
-        refreshVersion(): void;
+        refreshVersion(): Promise<void>;
         installViaWebOta(info?: any): void;
         c6UpdateKnownAvailable(): boolean;
     },
@@ -49,6 +49,7 @@ export function createFirmwareUpdateFeature(
     // ── Firmware Update State ─────────────────────────────────────────────
     var firmwareInstallRefreshTimer: any = null;
     var firmwareInstallRefreshUntil: any = 0;
+    let firmwareInstallRefreshGeneration = 0;
     var firmwareWebOtaFallbackTimer: any = null;
     const webOtaFallbackDelayMs = 12000;
     function firmwareUpdateAvailable(this: any) {
@@ -301,7 +302,9 @@ export function createFirmwareUpdateFeature(
                 state.firmwareInstallPostPending = false;
             }
         }
-        if (installWindowActive && (updateState === "UPDATE AVAILABLE" || updateState === "NO UPDATE")) {
+        // Keep the controls busy while the final asynchronous refresh is pending.
+        if (state.firmwareInstallTargetVersion && firmwareInstallRefreshUntil &&
+            (updateState === "UPDATE AVAILABLE" || updateState === "NO UPDATE")) {
             updateState = "INSTALLING";
         }
         state.firmwareUpdateState = updateState;
@@ -317,6 +320,7 @@ export function createFirmwareUpdateFeature(
         renderFirmwareUpdateStatus();
     }
     function stopFirmwareInstallRefresh(this: any) {
+        firmwareInstallRefreshGeneration++;
         if (firmwareInstallRefreshTimer)
             clearTimeout(firmwareInstallRefreshTimer);
         firmwareInstallRefreshTimer = null;
@@ -337,9 +341,27 @@ export function createFirmwareUpdateFeature(
         renderFirmwareUpdateStatus();
         return true;
     }
-    function pollFirmwareInstallRefresh(this: any) {
+    async function pollFirmwareInstallRefresh(this: any) {
+        const generation = firmwareInstallRefreshGeneration;
         firmwareInstallRefreshTimer = null;
-        dependencies.refreshVersion();
+        let refreshTimeout: ReturnType<typeof setTimeout> | undefined;
+        try {
+            // Allow the last check to finish, but bound requests to an offline panel.
+            await Promise.race([
+                dependencies.refreshVersion(),
+                new Promise<void>(resolve => { refreshTimeout = setTimeout(resolve, 15000); }),
+            ]);
+        }
+        catch (_) {
+            // A failed refresh can be retried until the installation deadline.
+        }
+        finally {
+            clearTimeout(refreshTimeout);
+        }
+        // Version callbacks can complete this attempt, or a new attempt can start,
+        // while the requests above are pending.
+        if (generation !== firmwareInstallRefreshGeneration || !firmwareInstallRefreshUntil)
+            return;
         if (stopFirmwareInstallRefreshIfComplete())
             return;
         if (Date.now() >= firmwareInstallRefreshUntil) {
@@ -354,6 +376,8 @@ export function createFirmwareUpdateFeature(
     function startFirmwareInstallRefresh(this: any) {
         if (firmwareInstallRefreshUntil)
             return;
+        firmwareInstallRefreshGeneration++;
+        state.firmwareInstallError = "";
         if (!state.firmwareInstallTargetVersion && isSpecificFirmwareVersion(state.firmwareLatestVersion)) {
             state.firmwareInstallTargetVersion = state.firmwareLatestVersion;
         }

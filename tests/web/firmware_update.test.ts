@@ -1,6 +1,7 @@
 import { initializeDeviceConfig } from "../../src/webserver/device_config";
 import { initializeAppState, state } from "../../src/webserver/state/app_instance";
 import { createFirmwareUpdateFeature } from "../../src/webserver/application/firmware_update_state";
+import { createStateLoaderFeature } from "../../src/webserver/application/state_loader_api";
 import { createFirmwareVersionFeature } from "../../src/webserver/application/firmware_version_state";
 import { createPublicFirmwareInstallFeature } from "../../src/webserver/application/public_firmware_install";
 
@@ -18,8 +19,14 @@ export async function runFirmwareUpdateTests() {
   const realClearTimeout = globalThis.clearTimeout;
   const realNow = Date.now;
   let now = 1000;
-  let poll: (() => void) | undefined;
-  globals.setTimeout = (callback: () => void) => { poll = callback; return 1; };
+  let poll: (() => void | Promise<void>) | undefined;
+  let refreshTimeout: (() => void) | undefined;
+  let pollsScheduled = 0;
+  globals.setTimeout = (callback: () => void, delay: number) => {
+    if (delay === 5000) { poll = callback; pollsScheduled++; }
+    if (delay === 15000) refreshTimeout = callback;
+    return 1;
+  };
   globals.clearTimeout = () => {};
   Date.now = () => now;
   const status = { style: {}, innerHTML: "", className: "" };
@@ -30,8 +37,9 @@ export async function runFirmwareUpdateTests() {
     stopInstallRefreshIfComplete() { updates.stopInstallRefreshIfComplete(); },
   });
   let nativeInstalls = 0;
+  let refreshVersion: () => Promise<void> = async () => {};
   updates = createFirmwareUpdateFeature(runtime, "test", version, {
-    postInstall() { nativeInstalls++; }, refreshVersion() {}, installViaWebOta() {}, c6UpdateKnownAvailable: () => false,
+    postInstall() { nativeInstalls++; }, refreshVersion: () => refreshVersion(), installViaWebOta() {}, c6UpdateKnownAvailable: () => false,
   });
   try {
     version.set("dev");
@@ -56,7 +64,7 @@ export async function runFirmwareUpdateTests() {
     now += 170000;
     updates.setInfo({ state: "NO UPDATE", current_version: "v2.11.0" });
     now += 10001;
-    poll!();
+    await poll!();
     equal(state.firmwareUpdateState, "", "routine updates must not postpone the deadline");
     const error = state.firmwareInstallError;
     equal(error.includes("could not be confirmed"), true, "timeout reports a visible failure");
@@ -67,6 +75,72 @@ export async function runFirmwareUpdateTests() {
     updates.setInfo({ state: "UPDATE AVAILABLE", current_version: "v2.8.6", latest_version: "v2.11.0" });
     equal(state.firmwareInstallTargetVersion, "", "actual version confirms a downgrade despite a newer release");
     equal(state.firmwareInstallStatus, "Firmware v2.8.6 installed.", "confirmed result is visible");
+    // A last response arriving after the nominal deadline can still confirm success.
+    version.set("v2.11.0");
+    state.firmwareInstallError = "Previous failure";
+    state.firmwareInstallTargetVersion = "v2.8.6";
+    updates.startInstallRefresh();
+    equal(state.firmwareInstallError, "", "a fresh native attempt clears an old error");
+    let finishRefresh!: () => void;
+    refreshVersion = () => new Promise<void>(resolve => { finishRefresh = resolve; });
+    now += 180001;
+    const finalPoll = poll!();
+    equal(state.firmwareInstallTargetVersion, "v2.8.6", "deadline waits for the final response");
+    updates.setInfo({ state: "NO UPDATE", current_version: "v2.11.0" });
+    equal(state.firmwareUpdateState, "INSTALLING", "final check keeps controls busy");
+    version.set("v2.8.6");
+    finishRefresh();
+    await finalPoll;
+    equal(state.firmwareInstallError, "", "late success must not leave a timeout error");
+    equal(state.firmwareInstallStatus, "Firmware v2.8.6 installed.", "late response confirms installation");
+
+    // A pending check from a stopped attempt must not time out a replacement attempt.
+    version.set("v2.11.0");
+    state.firmwareInstallTargetVersion = "v2.8.6";
+    updates.startInstallRefresh();
+    now += 180001;
+    const oldPoll = poll!();
+    updates.stopInstallRefresh();
+    state.firmwareInstallTargetVersion = "v2.9.0";
+    updates.startInstallRefresh();
+    const scheduledBeforeCompletion = pollsScheduled;
+    finishRefresh();
+    await oldPoll;
+    equal(state.firmwareInstallTargetVersion, "v2.9.0", "old poll cannot clear a new target");
+    equal(pollsScheduled, scheduledBeforeCompletion, "old poll cannot schedule duplicate polling");
+
+    // A panel that never responds must still reach a visible, bounded timeout.
+    now += 180001;
+    const offlinePoll = poll!();
+    refreshTimeout!();
+    await offlinePoll;
+    equal(state.firmwareInstallError.includes("could not be confirmed"), true, "hung final request times out visibly");
+
+    // The production loader's promise includes the actual version request.
+    const responses: (() => void)[] = [];
+    const request = (_path: unknown, callback?: (data: any) => void) => {
+      const index = responses.length;
+      return new Promise(resolve => responses.push(() => {
+        if (index === 0) callback?.({ firmware_version: "v2.8.6" });
+        resolve(null);
+      }));
+    };
+    const loader = createStateLoaderFeature(runtime, {} as any, {} as any, version, updates, {} as any,
+      { entityLookupNames: () => [], rememberEntityPostPath() {} } as any, {} as any,
+      { getJsonQuietly: request, getJsonFirst: request, entityDetailPaths: () => [] } as any,
+      {} as any, { subpageEntityKeys: () => [], connectEvents() {} });
+    state.firmwareInstallTargetVersion = "v2.8.6";
+    updates.startInstallRefresh();
+    let refreshed = false;
+    const loaded = loader.refreshFirmwareVersion().then(() => { refreshed = true; });
+    responses.slice(1).forEach(resolve => resolve());
+    await Promise.resolve();
+    await Promise.resolve();
+    equal(refreshed, false, "loader waits for the outstanding device version response");
+    responses[0]!();
+    await loaded;
+    equal(state.firmwareInstallStatus, "Firmware v2.8.6 installed.", "loader applies version before completing");
+
     let banner = "";
     const upload = createPublicFirmwareInstallFeature({ request: async (url: string) => url === "/update"
       ? { kind: "network-error", error: new Error("Load failed") }
