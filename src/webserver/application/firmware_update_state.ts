@@ -181,10 +181,6 @@ export function createFirmwareUpdateFeature(
             state.firmwareOtaFilename = String(info.ota_filename).trim();
         if (info.ota_md5)
             state.firmwareOtaMd5 = String(info.ota_md5).trim();
-        if (state.firmwareUpdateState === "NO UPDATE" &&
-            !isSpecificFirmwareVersion(state.firmwareVersion)) {
-            setFirmwareVersion(latest);
-        }
         syncFirmwareVersionSelect();
         renderFirmwareUpdateStatus();
         return true;
@@ -259,6 +255,9 @@ export function createFirmwareUpdateFeature(
             status = escHtml(state.firmwareInstallError);
             cls += " sp-update-error";
         }
+        else if (state.firmwareInstallStatus) {
+            status = escHtml(state.firmwareInstallStatus);
+        }
         els.fwStatus.className = cls;
         els.fwStatus.innerHTML = status;
         if (els.fwCheckBtn) {
@@ -302,18 +301,11 @@ export function createFirmwareUpdateFeature(
                 state.firmwareInstallPostPending = false;
             }
         }
-        if (installWindowActive && updateState === "UPDATE AVAILABLE") {
+        if (installWindowActive && (updateState === "UPDATE AVAILABLE" || updateState === "NO UPDATE")) {
             updateState = "INSTALLING";
         }
         state.firmwareUpdateState = updateState;
-        if (state.firmwareUpdateState)
-            state.firmwareInstallError = "";
         state.firmwareReleaseUrl = d.release_url || state.firmwareReleaseUrl || "";
-        if (state.firmwareUpdateState === "NO UPDATE" &&
-            !isSpecificFirmwareVersion(state.firmwareVersion) &&
-            isSpecificFirmwareVersion(state.firmwareLatestVersion)) {
-            setFirmwareVersion(state.firmwareLatestVersion);
-        }
         if (state.firmwareUpdateState)
             state.firmwareChecking = false;
         if (state.firmwareUpdateState === "INSTALLING") {
@@ -323,10 +315,6 @@ export function createFirmwareUpdateFeature(
             stopFirmwareInstallRefreshIfComplete();
         }
         renderFirmwareUpdateStatus();
-    }
-    function firmwareVersionMatches(this: any, version?: any, expected?: any) {
-        return String(version == null ? "" : version).trim() ===
-            String(expected == null ? "" : expected).trim();
     }
     function stopFirmwareInstallRefresh(this: any) {
         if (firmwareInstallRefreshTimer)
@@ -340,12 +328,13 @@ export function createFirmwareUpdateFeature(
     }
     function stopFirmwareInstallRefreshIfComplete(this: any) {
         var target: any = state.firmwareInstallTargetVersion;
-        if (!target || state.firmwareUpdateState !== "NO UPDATE")
+        if (!isSpecificFirmwareVersion(target) || !firmwareVersionsSame(state.firmwareVersion, target))
             return false;
-        if (isSpecificFirmwareVersion(target) && !firmwareVersionMatches(state.firmwareVersion, target)) {
-            setFirmwareVersion(target);
-        }
         stopFirmwareInstallRefresh();
+        state.firmwareUpdateState = "";
+        state.firmwareInstallError = "";
+        state.firmwareInstallStatus = "Firmware " + target + " installed.";
+        renderFirmwareUpdateStatus();
         return true;
     }
     function pollFirmwareInstallRefresh(this: any) {
@@ -355,11 +344,16 @@ export function createFirmwareUpdateFeature(
             return;
         if (Date.now() >= firmwareInstallRefreshUntil) {
             stopFirmwareInstallRefresh();
+            state.firmwareUpdateState = "";
+            state.firmwareInstallError = "Firmware update could not be confirmed. Reconnect to the display and check its current version before retrying.";
+            renderFirmwareUpdateStatus();
             return;
         }
         firmwareInstallRefreshTimer = setTimeout(pollFirmwareInstallRefresh, 5000);
     }
     function startFirmwareInstallRefresh(this: any) {
+        if (firmwareInstallRefreshUntil)
+            return;
         if (!state.firmwareInstallTargetVersion && isSpecificFirmwareVersion(state.firmwareLatestVersion)) {
             state.firmwareInstallTargetVersion = state.firmwareLatestVersion;
         }

@@ -128,8 +128,12 @@ export function createPublicFirmwareInstallFeature(
                 });
             }).catch(function (this: any, err?: any) {
                 if (uploadStarted && !uploadResponseReceived) {
-                    waitForFirmwareRestart();
-                    return true;
+                    // The connection may close during reboot, but that is not proof
+                    // of success. Keep checking the version and expose the uncertainty.
+                    state.firmwareInstallStatus = "Upload connection lost. Checking whether the display installed the firmware…";
+                    renderFirmwareUpdateStatus();
+                    setTimeout(appEvents.connect, 5000);
+                    return false;
                 }
                 failPublicFirmwareUpload(err && err.message);
                 return false;

@@ -5872,12 +5872,17 @@ async function assertHostedCompatibility(browser) {
   const context = await browser.newContext({ viewport: testCase.viewport });
   await installRoutes(context, testCase.slug, { nativeState: nativeConfigState(testCase.slug) });
   const firmwareBody = "test firmware download";
-  await context.route("https://jtenniswood.github.io/**/*.ota.bin", route => route.fulfill({
-    status: 200,
-    contentType: "application/octet-stream",
-    headers: { "Access-Control-Allow-Origin": "*" },
-    body: firmwareBody,
-  }));
+  let releaseDownload;
+  const downloadReady = new Promise(resolve => { releaseDownload = resolve; });
+  await context.route("https://jtenniswood.github.io/**/*.ota.bin", async route => {
+    await downloadReady;
+    return route.fulfill({
+      status: 200,
+      contentType: "application/octet-stream",
+      headers: { "Access-Control-Allow-Origin": "*" },
+      body: firmwareBody,
+    });
+  });
   const uploads = [];
   context.on("request", request => {
     if (new URL(request.url()).pathname === "/update") uploads.push(request);
@@ -5928,6 +5933,12 @@ async function assertHostedCompatibility(browser) {
     await page.waitForFunction(() => window.__compatRequests.some(item => item.url.endsWith(".ota.bin")));
     const download = await page.evaluate(() => window.__compatRequests.find(item => item.url.endsWith(".ota.bin")));
     assert.equal(download.credentials, "omit", "public firmware downloads must not include browser credentials");
+    await page.evaluate(() => window.__seedEspState([
+      { id: "update-firmware__update", state: "NO UPDATE", current_version: "v1.12.0", latest_version: "v1.13.0" },
+    ]));
+    assert.equal(await page.locator("#sp-fw-previous-panel .sp-fw-btn").innerText(), "Installing…", "routine status must not cancel a pending download");
+    assert(await page.locator("#sp-fw-previous-panel .sp-fw-btn").isDisabled(), "duplicate uploads stay disabled");
+    releaseDownload();
     await page.waitForFunction(() => window.__compatRequests.some(item => item.url.endsWith("/update") && item.status === 204));
     const upload = await page.evaluate(() => window.__compatRequests.find(item => item.url.endsWith("/update")));
     assert.equal(upload.credentials, "include", "firmware uploads retain device authentication");
