@@ -467,6 +467,13 @@ target_compile_options(panel_identity_runtime_test PRIVATE -Wall -Wextra -Werror
 target_include_directories(panel_identity_runtime_test PRIVATE panel_identity_stubs ../../components/espcontrol)
 add_test(NAME panel_identity_runtime_test COMMAND panel_identity_runtime_test)
 
+add_executable(panel_identity_runtime_2026_9_1_test panel_identity_runtime_test.cpp ../../components/espcontrol/panel_identity.cpp)
+target_compile_features(panel_identity_runtime_2026_9_1_test PRIVATE cxx_std_17)
+target_compile_options(panel_identity_runtime_2026_9_1_test PRIVATE -Wall -Wextra -Werror)
+target_compile_definitions(panel_identity_runtime_2026_9_1_test PRIVATE "ESPHOME_VERSION_CODE=VERSION_CODE(2026,9,1)")
+target_include_directories(panel_identity_runtime_2026_9_1_test PRIVATE panel_identity_stubs ../../components/espcontrol)
+add_test(NAME panel_identity_runtime_2026_9_1_test COMMAND panel_identity_runtime_2026_9_1_test)
+
 set(CLOCK_BAR_TITLE_TEST_SOURCE ${CMAKE_CURRENT_BINARY_DIR}/clock_bar_title_test.cpp)
 add_custom_command(
   OUTPUT ${CLOCK_BAR_TITLE_TEST_SOURCE}
