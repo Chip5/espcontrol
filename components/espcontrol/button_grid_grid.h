@@ -122,12 +122,12 @@ inline void configure_grid_layout(lv_obj_t *page, int num_slots, int cols) {
   int slot_count = bounded_grid_slots(num_slots);
   int col_count = cols > 0 ? cols : 1;
   if (col_count > MAX_GRID_SLOTS) col_count = MAX_GRID_SLOTS;
-  int row_count = (slot_count + col_count - 1) / col_count;
+  int row_count = ((slot_count + col_count - 1) / col_count) * 2;
   if (row_count < 1) row_count = 1;
-  if (row_count > MAX_GRID_SLOTS) row_count = MAX_GRID_SLOTS;
+  if (row_count > MAX_GRID_POSITIONS) row_count = MAX_GRID_POSITIONS;
 
   static lv_coord_t col_dsc[MAX_GRID_SLOTS + 1];
-  static lv_coord_t row_dsc[MAX_GRID_SLOTS + 1];
+  static lv_coord_t row_dsc[MAX_GRID_POSITIONS + 1];
   for (int i = 0; i < col_count; i++) col_dsc[i] = LV_GRID_FR(1);
   col_dsc[col_count] = LV_GRID_TEMPLATE_LAST;
   for (int i = 0; i < row_count; i++) row_dsc[i] = LV_GRID_FR(1);
@@ -957,6 +957,33 @@ inline void refresh_card_layout(BtnSlot &s, const ParsedCfg &p,
   }
 }
 
+// Compact action cards use a horizontal icon/label arrangement. Reuse the
+// complete icon font so every user-selected glyph remains available.
+inline void refresh_compact_card_layout(BtnSlot &slot, bool compact) {
+  if (!slot.btn || !slot.icon_lbl || !slot.text_lbl) return;
+  if (!compact && !slot.compact_layout) return;
+  slot.compact_layout = compact;
+  const lv_font_t *font = lv_obj_get_style_text_font(slot.icon_lbl, LV_PART_MAIN);
+  const int icon_size = font ? font->line_height : 32;
+  apply_icon_width_compensation(slot.icon_lbl, compact ? 154 : 256);
+  lv_obj_set_style_transform_pivot_x(slot.icon_lbl, compact ? icon_size / 2 : 0, LV_PART_MAIN);
+  lv_obj_set_style_transform_pivot_y(slot.icon_lbl, compact ? icon_size / 2 : 0, LV_PART_MAIN);
+  if (compact) {
+    lv_obj_update_layout(slot.btn);
+    const int inset = icon_size * 3 / 5 + 8;
+    lv_obj_align(slot.icon_lbl, LV_ALIGN_LEFT_MID, -icon_size / 5, 0);
+    lv_label_set_long_mode(slot.text_lbl, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(slot.text_lbl, std::max(1, int(lv_obj_get_content_width(slot.btn)) - inset));
+    lv_obj_set_height(slot.text_lbl, LV_SIZE_CONTENT);
+    lv_obj_align(slot.text_lbl, LV_ALIGN_LEFT_MID, inset, 0);
+  } else {
+    lv_obj_align(slot.icon_lbl, LV_ALIGN_TOP_LEFT, 0, 0);
+    configure_button_label_wrap(slot.text_lbl);
+    lv_obj_align(slot.text_lbl, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+  }
+  if (slot.sensor_container) lv_obj_set_style_opa(slot.sensor_container, compact ? LV_OPA_TRANSP : LV_OPA_COVER, LV_PART_MAIN);
+}
+
 inline void grid_refresh_layout(
     BtnSlot *slots, const GridConfig &cfg,
     const std::string &order_str,
@@ -972,10 +999,11 @@ inline void grid_refresh_layout(
   for (int i = 0; i < NS; i++)
     lv_obj_add_flag(slots[i].btn, LV_OBJ_FLAG_HIDDEN);
   configure_grid_layout(main_page_obj, NS, COLS);
-  int ROWS = (NS + COLS - 1) / COLS;
+  int ROWS = ((NS + COLS - 1) / COLS) * 2;
+  const int NC = grid_position_count(NS, COLS);
 
   OrderResult parsed, order;
-  parse_order_string(order_str, NS, parsed);
+  parse_order_string(order_str, NS, parsed, COLS);
   clear_spanned_cells(parsed, NS, COLS, order);
   clock_bar_clear_responsive_grid_cards(main_page_obj);
   navigation_clear_home_targets();
@@ -986,9 +1014,9 @@ inline void grid_refresh_layout(
   } else if (NS > 0) {
     first_card = slots[0].btn;
   }
-  set_media_home_grid_metrics(main_page_obj, COLS, ROWS, first_card);
+  set_media_home_grid_metrics(main_page_obj, COLS, ROWS / 2, first_card);
 
-  for (int pos = 0; pos < NS; pos++) {
+  for (int pos = 0; pos < NC; pos++) {
     int idx = order.positions[pos];
     if (idx < 1 || idx > NS) continue;
     auto &s = slots[idx - 1];
@@ -996,12 +1024,12 @@ inline void grid_refresh_layout(
     int col = pos % COLS, row = pos / COLS;
     int row_span = order.row_span[idx - 1] > 0 ? order.row_span[idx - 1] : 1;
     int col_span = order.col_span[idx - 1] > 0 ? order.col_span[idx - 1] : 1;
-    set_grid_card_cell(s.btn, main_page_obj, col, row, col_span, row_span, COLS, ROWS);
+    set_half_row_card_cell(s.btn, main_page_obj, col, row, col_span, row_span, COLS, ROWS, order.compact[idx - 1]);
   }
 
   if (main_page_obj) lv_obj_update_layout(main_page_obj);
 
-  for (int pos = 0; pos < NS; pos++) {
+  for (int pos = 0; pos < NC; pos++) {
     int idx = order.positions[pos];
     if (idx < 1 || idx > NS) continue;
     auto &s = slots[idx - 1];
@@ -1010,6 +1038,7 @@ inline void grid_refresh_layout(
     int row_span = order.row_span[idx - 1] > 0 ? order.row_span[idx - 1] : 1;
     int col_span = order.col_span[idx - 1] > 0 ? order.col_span[idx - 1] : 1;
     refresh_card_layout(s, p, cfg, row_span, col_span);
+    refresh_compact_card_layout(s, order.compact[idx - 1]);
     espcontrol::cards::cleaning_driver_refresh_translated_text(
       s, p, card_runtime_context(p));
   }
@@ -1040,7 +1069,8 @@ inline void grid_phase1(
   for (int i = 0; i < NS; i++)
     lv_obj_add_flag(slots[i].btn, LV_OBJ_FLAG_HIDDEN);
   configure_grid_layout(main_page_obj, NS, COLS);
-  int ROWS = (NS + COLS - 1) / COLS;
+  int ROWS = ((NS + COLS - 1) / COLS) * 2;
+  const int NC = grid_position_count(NS, COLS);
   if (NS != cfg.num_slots) {
     ESP_LOGW("sensors", "Grid slot count %d exceeds max %d; ignoring extra slots",
       cfg.num_slots, MAX_GRID_SLOTS);
@@ -1059,7 +1089,7 @@ inline void grid_phase1(
   }
 
   OrderResult parsed, order;
-  parse_order_string(order_str, NS, parsed);
+  parse_order_string(order_str, NS, parsed, COLS);
   clear_spanned_cells(parsed, NS, COLS, order);
   clock_bar_clear_responsive_grid_cards(main_page_obj);
 
@@ -1086,7 +1116,7 @@ inline void grid_phase1(
   reset_climate_control_refs();
   screen_lock_reset_registry();
 
-  for (int pos = 0; pos < NS; pos++) {
+  for (int pos = 0; pos < NC; pos++) {
     int idx = order.positions[pos];
     if (idx < 1 || idx > NS) continue;
     auto &s = slots[idx - 1];
@@ -1095,7 +1125,7 @@ inline void grid_phase1(
     int col = pos % COLS, row = pos / COLS;
     int row_span = order.row_span[idx - 1] > 0 ? order.row_span[idx - 1] : 1;
     int col_span = order.col_span[idx - 1] > 0 ? order.col_span[idx - 1] : 1;
-    set_grid_card_cell(s.btn, main_page_obj, col, row, col_span, row_span, COLS, ROWS);
+    set_half_row_card_cell(s.btn, main_page_obj, col, row, col_span, row_span, COLS, ROWS, order.compact[idx - 1]);
 
     if (cfg.wrap_tall_labels && row_span > 1) {
       lv_label_set_long_mode(s.text_lbl, LV_LABEL_LONG_WRAP);
@@ -1108,6 +1138,7 @@ inline void grid_phase1(
     display_apply_slot_text_width(s, display);
     setup_card_visual(s, p, context, cfg, palette, row_span, col_span);
     refresh_card_layout(s, p, cfg, row_span, col_span);
+    refresh_compact_card_layout(s, order.compact[idx - 1]);
   }
   screen_lock_apply();
   ESP_LOGI("sensors", "Phase 1: done (%lu ms)", esphome::millis());
@@ -1136,10 +1167,11 @@ inline bool grid_refresh_subpage_layouts(
   if (slots == nullptr) return false;
   const int NS = bounded_grid_slots(cfg.num_slots);
   const int COLS = cfg.cols > 0 ? cfg.cols : 1;
-  const int ROWS = (NS + COLS - 1) / COLS;
+  const int ROWS = ((NS + COLS - 1) / COLS) * 2;
+  const int NC = grid_position_count(NS, COLS);
   const DisplayProfile display = display_profile_from_grid_config(cfg);
   static lv_coord_t subpage_cols[MAX_GRID_SLOTS + 1];
-  static lv_coord_t subpage_rows[MAX_GRID_SLOTS + 1];
+  static lv_coord_t subpage_rows[MAX_GRID_POSITIONS + 1];
   for (int i = 0; i < COLS; i++) subpage_cols[i] = LV_GRID_FR(1);
   subpage_cols[COLS] = LV_GRID_TEMPLATE_LAST;
   for (int i = 0; i < ROWS; i++) subpage_rows[i] = LV_GRID_FR(1);
@@ -1175,7 +1207,7 @@ inline bool grid_refresh_subpage_layouts(
 
     const std::string order = get_subpage_order(sp_cfg);
     SubpageOrder sp_order;
-    parse_subpage_order(order, NS, sp_btns.size(), sp_order);
+    parse_subpage_order(order, NS, sp_btns.size(), sp_order, COLS);
     normalize_subpage_order_spans(sp_order, NS, COLS);
 
     // Binding a card to another entity/type requires new HA callbacks. Keep
@@ -1183,7 +1215,7 @@ inline bool grid_refresh_subpage_layouts(
     // a normal rebuild rather than moving a card that still controls its old
     // entity. Pure order and span changes continue to update in place.
     bool structural_change = false;
-    for (int gp = 0; gp < NS; gp++) {
+    for (int gp = 0; gp < NC; gp++) {
       const int button_index = sp_order.positions[gp];
       if (button_index < 1 || button_index > static_cast<int>(sp_btns.size())) continue;
       NavigationSubpageEntry::Card *card = navigation_subpage_card(*entry, button_index);
@@ -1205,18 +1237,19 @@ inline bool grid_refresh_subpage_layouts(
     if (entry->back_slot.text_lbl != nullptr) {
       lv_label_set_display_text(entry->back_slot.text_lbl, back_label.c_str());
     }
-    set_grid_card_cell(
+    set_half_row_card_cell(
       entry->back_button, entry->screen,
       sp_order.back_pos % COLS, sp_order.back_pos / COLS,
-      sp_order.back_col_span, sp_order.back_row_span, COLS, ROWS);
+      sp_order.back_col_span, sp_order.back_row_span, COLS, ROWS, sp_order.back_compact);
     apply_card_label_line_clamp(entry->back_slot.text_lbl, cfg,
                                 sp_order.back_row_span);
     configure_button_label_wrap(entry->back_slot.text_lbl);
+    refresh_compact_card_layout(entry->back_slot, sp_order.back_compact);
 
     // Preserve card instances (and their HA subscriptions), but hide cards
     // removed from the saved order so stale content is never left visible.
     bool visible_cards[MAX_GRID_SLOTS] = {};
-    for (int gp = 0; gp < NS; gp++) {
+    for (int gp = 0; gp < NC; gp++) {
       const int button_index = sp_order.positions[gp];
       if (button_index >= 1 &&
           button_index <= static_cast<int>(sp_btns.size()) &&
@@ -1237,7 +1270,7 @@ inline bool grid_refresh_subpage_layouts(
       }
     }
 
-    for (int gp = 0; gp < NS; gp++) {
+    for (int gp = 0; gp < NC; gp++) {
       const int button_index = sp_order.positions[gp];
       if (button_index < 1 || button_index > static_cast<int>(sp_btns.size())) continue;
       NavigationSubpageEntry::Card *card = navigation_subpage_card(*entry, button_index);
@@ -1252,12 +1285,13 @@ inline bool grid_refresh_subpage_layouts(
         ? sp_order.col_span[button_index - 1] : 1;
       const int row_span = sp_order.row_span[button_index - 1] > 0
         ? sp_order.row_span[button_index - 1] : 1;
-      set_grid_card_cell(card->button, entry->screen, col, row, col_span, row_span, COLS, ROWS);
+      set_half_row_card_cell(card->button, entry->screen, col, row, col_span, row_span, COLS, ROWS, sp_order.compact[button_index - 1]);
       const ParsedCfg button_config =
         parsed_cfg_from_subpage_btn(sp_btns[button_index - 1]);
       const auto context = card_runtime_context(
         button_config, espcontrol::cards::Surface::SUBPAGE);
       refresh_card_layout(card->slot, button_config, cfg, row_span, col_span);
+      refresh_compact_card_layout(card->slot, sp_order.compact[button_index - 1]);
       espcontrol::cards::sensor_driver_refresh_layout(
         card->slot, button_config, context, display, row_span, col_span);
     }
@@ -1836,7 +1870,8 @@ inline void grid_phase2(
     ESP_LOGW("sensors", "Grid slot count %d exceeds max %d; ignoring extra slots",
       cfg.num_slots, MAX_GRID_SLOTS);
   }
-  int ROWS = (NS + COLS - 1) / COLS;
+  int ROWS = ((NS + COLS - 1) / COLS) * 2;
+  const int NC = grid_position_count(NS, COLS);
 
   static bool has_sensor[MAX_GRID_SLOTS] = {};
   static bool sensor_text_mode[MAX_GRID_SLOTS] = {};
@@ -1882,7 +1917,7 @@ inline void grid_phase2(
   set_current_button_primary_color(palette.on_val);
 
   OrderResult parsed, order;
-  parse_order_string(order_str, NS, parsed);
+  parse_order_string(order_str, NS, parsed, COLS);
   clear_spanned_cells(parsed, NS, COLS, order);
   lv_obj_t *first_card = nullptr;
   if (order.positions[0] >= 1 && order.positions[0] <= NS) {
@@ -1890,9 +1925,9 @@ inline void grid_phase2(
   } else if (NS > 0) {
     first_card = slots[0].btn;
   }
-  set_media_home_grid_metrics(main_page_obj, COLS, ROWS, first_card);
+  set_media_home_grid_metrics(main_page_obj, COLS, ROWS / 2, first_card);
 
-  for (int pos = 0; pos < NS; pos++) {
+  for (int pos = 0; pos < NC; pos++) {
     int idx = order.positions[pos];
     if (idx < 1 || idx > NS) continue;
     auto &s = slots[idx - 1];
@@ -1975,11 +2010,11 @@ inline void grid_phase2(
   static lv_coord_t sp_col_dsc[MAX_GRID_SLOTS + 1];
   for (int i = 0; i < COLS; i++) sp_col_dsc[i] = LV_GRID_FR(1);
   sp_col_dsc[COLS] = LV_GRID_TEMPLATE_LAST;
-  static lv_coord_t sp_row_dsc[MAX_GRID_SLOTS + 1];
+  static lv_coord_t sp_row_dsc[MAX_GRID_POSITIONS + 1];
   for (int i = 0; i < ROWS; i++) sp_row_dsc[i] = LV_GRID_FR(1);
   sp_row_dsc[ROWS] = LV_GRID_TEMPLATE_LAST;
 
-  const lv_font_t *sp_icon_fnt = lv_obj_get_style_text_font(slots[0].icon_lbl, LV_PART_MAIN);
+  const lv_font_t *sp_icon_fnt = cfg.icon_font;
 
   lv_obj_t *ref_btn = slots[0].btn;
   for (int i = 0; i < NS; i++) {
@@ -2021,12 +2056,12 @@ inline void grid_phase2(
     std::string sp_back_label = get_subpage_back_label(sp_order_str);
 
     SubpageOrder sp_ord;
-    parse_subpage_order(sp_order_str, NS, sp_btns.size(), sp_ord);
+    parse_subpage_order(sp_order_str, NS, sp_btns.size(), sp_ord, COLS);
     normalize_subpage_order_spans(sp_ord, NS, COLS);
 
     lv_obj_t *sub_scr = lv_obj_create(NULL);
     int display_order = NS;
-    for (int pos = 0; pos < NS; pos++) {
+    for (int pos = 0; pos < NC; pos++) {
       if (parsed.positions[pos] == si + 1) {
         display_order = pos;
         break;
@@ -2051,11 +2086,11 @@ inline void grid_phase2(
     lv_obj_t *back_btn = create_grid_card_button(
       sub_scr, sp_radius, sp_pad, sp_btn_fnt, sp_txt_color);
     apply_button_colors(back_btn, false, DEFAULT_SLIDER_COLOR, true, off_val);
-    set_grid_card_cell(
+    set_half_row_card_cell(
       back_btn, sub_scr,
       sp_ord.back_pos % COLS, sp_ord.back_pos / COLS,
       sp_ord.back_col_span, sp_ord.back_row_span,
-      COLS, ROWS);
+      COLS, ROWS, sp_ord.back_compact);
     BtnSlot back_slot = create_dynamic_card_slot(
       back_btn, sp_icon_fnt, display_sensor_font(display), sp_btn_fnt, sp_txt_color,
       cfg.subpage_chevron_font);
@@ -2065,6 +2100,7 @@ inline void grid_phase2(
     lv_label_set_display_text(back_slot.text_lbl, sp_back_label.c_str());
     apply_card_label_line_clamp(back_slot.text_lbl, cfg, sp_ord.back_row_span);
     configure_button_label_wrap(back_slot.text_lbl);
+    refresh_compact_card_layout(back_slot, sp_ord.back_compact);
 
     lv_obj_add_event_cb(back_btn, [](lv_event_t *e) {
       lv_scr_load_anim((lv_obj_t *)lv_event_get_user_data(e), LV_SCR_LOAD_ANIM_NONE, 0, 0, false);
@@ -2103,7 +2139,7 @@ inline void grid_phase2(
       }
     };
 
-    for (int gp = 0; gp < NS; gp++) {
+    for (int gp = 0; gp < NC; gp++) {
       int bn = sp_ord.positions[gp];
       if (bn < 1 || bn > (int)sp_btns.size()) continue;
       auto &sb = sp_btns[bn - 1];
@@ -2118,11 +2154,10 @@ inline void grid_phase2(
       lv_obj_t *sb_btn = create_grid_card_button(
         sub_scr, sp_radius, sp_pad, sp_btn_fnt, sp_txt_color);
       int cs = sp_ord.col_span[bn - 1] > 0 ? sp_ord.col_span[bn - 1] : 1;
-      set_grid_card_cell(sb_btn, sub_scr, col, row, cs, rs, COLS, ROWS);
+      set_half_row_card_cell(sb_btn, sub_scr, col, row, cs, rs, COLS, ROWS, sp_ord.compact[bn - 1]);
       BtnSlot sub_slot = create_dynamic_card_slot(
         sb_btn, sp_icon_fnt, display_sensor_font(display), sp_btn_fnt, sp_txt_color,
         cfg.subpage_chevron_font);
-      navigation_register_subpage_card(si + 1, bn, sub_slot, sb);
       display_apply_main_width(sub_slot.icon_lbl, display);
       display_apply_slot_text_width(sub_slot, display);
       setup_card_visual(sub_slot, sb_cfg, context, cfg, palette, rs, cs);
@@ -2130,6 +2165,8 @@ inline void grid_phase2(
       // cards remove button padding so their fill can reach the edges, so run
       // the card-specific refresh after clamping to restore the captured inset.
       refresh_card_layout(sub_slot, sb_cfg, cfg, rs, cs);
+      refresh_compact_card_layout(sub_slot, sp_ord.compact[bn - 1]);
+      navigation_register_subpage_card(si + 1, bn, sub_slot, sb);
 
       if (espcontrol::cards::image_driver_bind_subpage(
             sub_slot, sb_cfg, context, cfg)) continue;

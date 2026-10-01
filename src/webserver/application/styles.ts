@@ -137,6 +137,10 @@ export function createWebStyles(dragAnimation: boolean): string {
         ".sp-media-cover-details-title{margin:var(--btn-pad) var(--btn-pad) 0}" +
         ".sp-btn-label-row.sp-media-cover-details-row{width:auto;margin:0 var(--btn-pad) var(--btn-pad)}" +
         ".sp-btn-big .sp-media-cover-details-row{margin-top:calc(var(--btn-pad)*.5)}" +
+        ".sp-btn-compact{flex-direction:row;align-items:center;justify-content:flex-start;gap:calc(var(--btn-pad)*.65);padding:calc(var(--btn-pad)*.55) var(--btn-pad)}" +
+        ".sp-btn-compact .sp-btn-icon{position:static;width:auto;height:auto;transform:none;font-size:calc(var(--btn-icon)*.6);flex-shrink:0}" +
+        ".sp-btn-compact .sp-btn-label,.sp-btn-compact .sp-btn-label-row{position:static;margin:0;min-width:0;max-height:1.2em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+        ".sp-btn-compact .sp-btn-label-row{flex:1;width:auto}.sp-btn-compact .sp-btn-label{flex:1}.sp-btn-compact .sp-btn-sensor{display:none}" +
         ".sp-btn-double{grid-row:span 2}" +
         ".sp-btn-double .sp-btn-label,.sp-btn-double .sp-btn-label-row .sp-btn-label{max-height:var(--btn-label-max-height-dbl)}" +
         ".sp-btn-double .sp-media-now-title{-webkit-line-clamp:2}" +

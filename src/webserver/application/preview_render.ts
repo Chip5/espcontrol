@@ -1,3 +1,4 @@
+import { sizeColSpan, sizeRowSpan } from "../model/grid";
 import { state } from "../state/app_instance";
 import { WEB_UI_COLORS } from "../state/ui_tokens";
 import { escHtml } from "./ui_primitives";
@@ -101,6 +102,10 @@ export function createPreviewRenderFeature(dependencies: PreviewRenderDependenci
         }
         main.removeAttribute("aria-busy");
         var c: any = ctx();
+        function positionCell(element: HTMLElement, pos: number, size = 1, empty = false) {
+            element.style.gridColumn = (pos % dependencies.layout.gridCols + 1) + " / span " + sizeColSpan(size);
+            element.style.gridRow = (Math.floor(pos / dependencies.layout.gridCols) + 1) + " / span " + (empty ? 1 : sizeRowSpan(size, 2));
+        }
         updatePreviewHint(c);
         for (var pos: any = 0; pos < c.maxSlots; pos++) {
             var slot: any = c.grid[pos];
@@ -119,6 +124,7 @@ export function createPreviewRenderFeature(dependencies: PreviewRenderDependenci
                 backBtn.style.cursor = "pointer";
                 backBtn.setAttribute("data-pos", pos);
                 backBtn.draggable = !isConfigLocked();
+                positionCell(backBtn, pos, bkSz);
                 main.appendChild(backBtn);
             }
             else if (slot > 0) {
@@ -136,7 +142,8 @@ export function createPreviewRenderFeature(dependencies: PreviewRenderDependenci
                     var hidden: any = document.createElement("div");
                     hidden.className = "sp-empty-cell sp-info-only-hidden";
                     hidden.setAttribute("data-pos", pos);
-                    main.appendChild(hidden);
+                    positionCell(hidden, pos, c.sizes[slot]);
+                main.appendChild(hidden);
                     continue;
                 }
                 var iconName: any = resolveIcon(b);
@@ -177,6 +184,7 @@ export function createPreviewRenderFeature(dependencies: PreviewRenderDependenci
                     sensorBadge +
                         iconHtml +
                         labelHtml;
+                positionCell(btn, pos, slotSz);
                 main.appendChild(btn);
             }
             else {
@@ -184,6 +192,7 @@ export function createPreviewRenderFeature(dependencies: PreviewRenderDependenci
                 empty.className = "sp-empty-cell";
                 empty.setAttribute("data-pos", pos);
                 empty.innerHTML = '<span class="sp-add-pill"><span class="sp-add-icon mdi mdi-plus"></span></span>';
+                positionCell(empty, pos, 1, true);
                 main.appendChild(empty);
             }
         }

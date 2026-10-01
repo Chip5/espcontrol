@@ -1,6 +1,7 @@
+import { canPlaceSlotAt } from "../features/preview_grid";
 import { state } from "../state/app_instance";
 import * as EspControlModel from "../model";
-import { coveredCells } from "../model/grid";
+import { coveredCells, CARD_SIZE_COMPACT } from "../model/grid";
 import type { CardEditorDraftController } from "../features/card_editor_draft_controller";
 import type { ConfigPersistenceFeature } from "./config_post_api";
 import type { ApplicationLayoutState } from "./application_context";
@@ -426,8 +427,8 @@ export function createPreviewInteractionsFeature(
     }
     function firstFreeCell(this: any, afterPos?: any) {
         var start: any = afterPos != null ? afterPos : 0;
-        for (var i: any = 0; i < dependencies.layout.numSlots; i++) {
-            var candidate: any = (start + i) % dependencies.layout.numSlots;
+        for (var i: any = 0; i < dependencies.layout.gridCells; i++) {
+            var candidate: any = (start + i) % dependencies.layout.gridCells;
             if (state.grid[candidate] === 0)
                 return candidate;
         }
@@ -463,6 +464,7 @@ export function createPreviewInteractionsFeature(
         if (c.isSub) {
             var sp: any = getSubpage(state.editingSubpage);
             var newSlot: any = subpageFirstFreeSlot(sp);
+            if (newSlot < 0) return;
             beginNewCardDraft(pos, newSlot, true);
         }
         else {
@@ -482,7 +484,9 @@ export function createPreviewInteractionsFeature(
         if (slot < 0)
             return;
         state.buttons[slot - 1] = emptyButtonConfig("subpage");
-        state.grid[pos] = slot;
+        const size = canPlaceSlotAt(state.grid, pos, 1, dependencies.layout.gridCells, dependencies.layout.gridCols, 2) ? 1 : CARD_SIZE_COMPACT;
+        if (size !== 1) state.sizes[slot] = size;
+        placeSlotAt(state.grid, slot, pos, size);
         state.subpages[slot] = { order: [], buttons: [], grid: [], sizes: {} };
         buildSubpageGrid(state.subpages[slot]);
         dependencies.requestApi.postText(entityName("button_order"), serializeGrid(state.grid));
@@ -498,7 +502,7 @@ export function createPreviewInteractionsFeature(
             return;
         var srcSz: any = state.sizes[srcSlot] || 1;
         var srcPos: any = state.grid.indexOf(srcSlot);
-        var placement: any = findDuplicatePlacement(state.grid, srcPos + 1, srcSz, dependencies.layout.numSlots);
+        var placement: any = findDuplicatePlacement(state.grid, srcPos + 1, srcSz, dependencies.layout.gridCells);
         if (placement.pos < 0)
             return;
         var src: any = state.buttons[srcSlot - 1];
@@ -540,12 +544,13 @@ export function createPreviewInteractionsFeature(
         var homeSlot: any = state.editingSubpage;
         var sp: any = getSubpage(homeSlot);
         var newSlot: any = subpageFirstFreeSlot(sp);
+            if (newSlot < 0) return;
         while (sp.buttons.length < newSlot) {
             sp.buttons.push(emptyButtonConfig());
         }
         var srcSz: any = sp.sizes[srcSlot] || 1;
         var srcPos: any = sp.grid.indexOf(srcSlot);
-        var placement: any = findDuplicatePlacement(sp.grid, srcPos + 1, srcSz, dependencies.layout.numSlots);
+        var placement: any = findDuplicatePlacement(sp.grid, srcPos + 1, srcSz, dependencies.layout.gridCells);
         if (placement.pos < 0)
             return;
         var src: any = sp.buttons[srcSlot - 1];
@@ -577,7 +582,7 @@ export function createPreviewInteractionsFeature(
         for (var i: any = 0; i < c.maxSlots; i++) {
             if (c.grid[i] === slot) {
                 c.grid[i] = 0;
-                var cells: any = coveredCells(i, c.sizes[slot] || 1, c.maxSlots, dependencies.layout.gridCols, false);
+                var cells: any = coveredCells(i, c.sizes[slot] || 1, c.maxSlots, dependencies.layout.gridCols, false, 2);
                 for (var ci: any = 0; ci < cells.length; ci++) {
                     if (c.grid[cells[ci]] === -1)
                         c.grid[cells[ci]] = 0;
@@ -614,7 +619,7 @@ export function createPreviewInteractionsFeature(
         var c: any = ctx();
         for (var i: any = 0; i < c.maxSlots; i++) {
             if (slots.indexOf(c.grid[i]) !== -1) {
-                var cells: any = coveredCells(i, c.sizes[c.grid[i]] || 1, c.maxSlots, dependencies.layout.gridCols, false);
+                var cells: any = coveredCells(i, c.sizes[c.grid[i]] || 1, c.maxSlots, dependencies.layout.gridCols, false, 2);
                 for (var ci: any = 0; ci < cells.length; ci++) {
                     if (c.grid[cells[ci]] === -1)
                         c.grid[cells[ci]] = 0;

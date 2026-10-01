@@ -1,6 +1,7 @@
+import { canPlaceSlotAt } from "../features/preview_grid";
 import { state } from "../state/app_instance";
 import * as EspControlModel from "../model";
-import { applySpans, CARD_SIZE_SINGLE, clearSpans } from "../model/grid";
+import { applySpans, CARD_SIZE_SINGLE, CARD_SIZE_COMPACT, cardSupportsCompactSize, clearSpans } from "../model/grid";
 import { iconSlug, mdiIcon, textSpan } from "./ui_primitives";
 import type { CardEditorDraftController } from "../features/card_editor_draft_controller";
 import type { CardEditorValidationController } from "../features/card_editor_validation_controller";
@@ -380,7 +381,7 @@ export function createButtonSettingsFeature(
             else
                 c.sizes[slot] = nextSize;
             clearSpans(c.grid, c.maxSlots);
-            applySpans(c.grid, c.sizes, c.maxSlots, layout.gridCols);
+            applySpans(c.grid, c.sizes, c.maxSlots, layout.gridCols, 2);
             return true;
         }
         function saveResultSucceeded(this: any, result?: any) {
@@ -413,6 +414,13 @@ export function createButtonSettingsFeature(
                 }
                 renderPreview();
             }
+            if (draft.isNew && !canPlaceSlotAt(c.grid, draft.pos, c.sizes[slot] || CARD_SIZE_SINGLE, c.maxSlots, layout.gridCols, 2)) {
+                if (cardSupportsCompactSize(draft.button) && canPlaceSlotAt(c.grid, draft.pos, CARD_SIZE_COMPACT, c.maxSlots, layout.gridCols, 2)) c.sizes[slot] = CARD_SIZE_COMPACT;
+                else {
+                    showBanner("This card needs a full-height space. Choose another position.", "error");
+                    return Promise.resolve(false);
+                }
+            }
             var saved: any = cardEditorSaveController.apply(draft, {
                 slot: slot, maxSlots: c.maxSlots, isSubpage: c.isSub,
                 grid: c.grid, buttons: c.buttons,
@@ -424,6 +432,10 @@ export function createButtonSettingsFeature(
             }
             var savedButton: any = saved.button;
             var sizeChanged: any = applyCardSizeConstraint(savedButton);
+            if (saved.isNew) {
+                clearSpans(c.grid, c.maxSlots);
+                applySpans(c.grid, c.sizes, c.maxSlots, layout.gridCols, 2);
+            }
             var orderChanged: any = !saved.saveSubpage && (saved.saveGrid || sizeChanged);
             var persistence: any;
             if (saved.saveSubpage)

@@ -1,3 +1,4 @@
+import { gridPositionCount } from "../model/grid";
 import type { CardConfig } from "../contracts/types";
 import { WEB_UI_COLORS } from "./ui_tokens";
 import type { AppState, DeviceConfig } from "./types";
@@ -25,7 +26,7 @@ export function defaultTimezoneOptionsForDevice(deviceConfig: DeviceConfig): str
 }
 
 export function createInitialState(deviceConfig: DeviceConfig): AppState {
-  const grid = Array.from({ length: deviceConfig.slots }, () => 0);
+  const grid = Array.from({ length: gridPositionCount(deviceConfig.slots, deviceConfig.cols, 2) }, () => 0);
   const buttons = Array.from({ length: deviceConfig.slots }, emptyCardConfig);
   return {
     grid, sizes: {}, buttons, onColor: WEB_UI_COLORS.primary,

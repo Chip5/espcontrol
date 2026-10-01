@@ -10,6 +10,8 @@ import {
     CARD_SIZE_PORTRAIT_LARGE,
     CARD_SIZE_SINGLE,
     CARD_SIZE_ULTRA_WIDE,
+    CARD_SIZE_COMPACT,
+    cardSupportsCompactSize,
     sizeColSpan,
     sizeRowSpan,
 } from "../model/grid";
@@ -211,6 +213,7 @@ export function createConfigCodecFeature(
     }
     function normalizeCardSizeForConfig(this: any, b?: any, size?: any) {
         size = size || CARD_SIZE_SINGLE;
+        if (size === CARD_SIZE_COMPACT) return cardSupportsCompactSize(b) ? size : CARD_SIZE_SINGLE;
         // Wi-Fi sharing keeps its own allow-list, so it stays ahead of the
         // wider spans and never resolves to Ultra Wide.
         if (cardIsWifiSharing(b)) {
@@ -966,7 +969,7 @@ export function createConfigCodecFeature(
         return subpage;
     }
     function buildSubpageGrid(this: any, sp?: any) {
-        var result: any = EspControlModel.buildSubpageGrid(sp, layout.numSlots, layout.gridCols);
+        var result: any = EspControlModel.buildSubpageGrid(sp, layout.numSlots, layout.gridCols, 2);
         sp.grid = result.grid;
         sp.sizes = result.sizes;
         return sp.grid;
@@ -978,7 +981,7 @@ export function createConfigCodecFeature(
         return JSON.stringify(sp.order) !== previousOrder;
     }
     function serializeSubpageGrid(this: any, sp?: any) {
-        return EspControlModel.serializeSubpageGrid(sp.grid, sp.sizes || {}, sp.backLabel || "Back");
+        return EspControlModel.serializeSubpageGrid(sp.grid, sp.sizes || {}, sp.backLabel || "Back", layout.gridCols, 2);
     }
     function enterSubpage(this: any, homeSlot?: any) {
         state.editingSubpage = homeSlot;
@@ -1007,11 +1010,11 @@ export function createConfigCodecFeature(
             if (s > 0)
                 used[s] = true;
         });
-        for (var i: any = 1; i <= sp.buttons.length + 1; i++) {
+        for (var i: any = 1; i <= layout.numSlots; i++) {
             if (!used[i])
                 return i;
         }
-        return sp.buttons.length + 1;
+        return -1;
     }
     function bindTextPost(this: any, input?: any, postName?: any, opts?: any) {
         input.addEventListener("blur", function (this: any) {

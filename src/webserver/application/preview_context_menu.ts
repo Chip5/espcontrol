@@ -9,6 +9,8 @@ import {
     CARD_SIZE_MAX_WIDE,
     CARD_SIZE_PORTRAIT_LARGE,
     CARD_SIZE_SINGLE,
+    CARD_SIZE_COMPACT,
+    cardSupportsCompactSize,
     CARD_SIZE_TALL,
     CARD_SIZE_ULTRA_WIDE,
     CARD_SIZE_WIDE,
@@ -133,6 +135,10 @@ export function createPreviewContextMenuFeature(dependencies: PreviewContextMenu
                 sub.style.right = "100%";
             }
         });
+        wrapper.addEventListener("click", function (ev: MouseEvent) {
+            ev.stopPropagation();
+            sub.style.display = "block";
+        });
         wrapper.addEventListener("mousedown", function (this: any, ev?: any) { ev.preventDefault(); ev.stopPropagation(); });
         ctxMenu.appendChild(wrapper);
     }
@@ -168,7 +174,7 @@ export function createPreviewContextMenuFeature(dependencies: PreviewContextMenu
         var curSz: any = c.sizes[slot] || 1;
         if (curSz === targetSz)
             return;
-        var resized: any = resizeGridSlot(c.grid, c.sizes, slot, slotPos, targetSz, c.maxSlots, dependencies.layout.gridCols, !c.isSub);
+        var resized: any = resizeGridSlot(c.grid, c.sizes, slot, slotPos, targetSz, c.maxSlots, dependencies.layout.gridCols, !c.isSub, 2);
         if (!resized.accepted)
             return;
         c.grid.splice(0, c.grid.length);
@@ -202,6 +208,8 @@ export function createPreviewContextMenuFeature(dependencies: PreviewContextMenu
             return sizeColSpan(size) <= dependencies.layout.gridCols &&
                 sizeRowSpan(size) <= dependencies.layout.gridRows;
         }
+        if (cardSupportsCompactSize(b))
+            options.push({ size: CARD_SIZE_COMPACT, label: "Compact (half height)" });
         if (!cardIsWifiSharing(b)) {
             if (fitsScreen(CARD_SIZE_TALL)) options.push({ size: CARD_SIZE_TALL, label: "Tall (2x1)" });
             if (fitsScreen(CARD_SIZE_EXTRA_TALL)) options.push({ size: CARD_SIZE_EXTRA_TALL, label: "Extra Tall (3x1)" });

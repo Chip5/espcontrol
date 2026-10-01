@@ -218,7 +218,7 @@ export function backupOrderUsedSlots(
   order: string | null | undefined,
   importedCount: number,
 ): BackupOrderSlots {
-  const parts = String(order || "").split(",");
+  const parts = String(order || "").replace(/^H:/, "").split(",");
   const usedSlots: BackupUsedSlot[] = [];
   const seen: Record<string, boolean> = {};
   for (const part of parts) {

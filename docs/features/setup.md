@@ -86,6 +86,19 @@ To copy cards to another controller without replacing its other settings, use **
 
 Right-click a card and open **Size** to choose:
 
+- **Compact (half height)** is available for actions, navigation/subpage buttons,
+  triggers, switches, light switches, internal controls, and webhooks. Two compact
+  buttons plus the gap between them fit in the height of one normal tile. Normal
+  tiles retain their size. Compact cards use a horizontal icon and label and omit
+  sensor overlays. Detailed controls and information cards use the normal sizes.
+
+Existing layouts keep their positions. Compact layouts use half-row positions in
+saved orders (`H:` prefix and `c` size suffix), so restore a pre-compact backup
+before downgrading to firmware without compact support. The number of configured
+cards per page is unchanged (20 on the 10.1-inch panel).
+
+Other sizes:
+
 - **Single** - normal one-slot card.
 - **Tall** - spans two rows.
 - **Extra Tall** - spans three rows.

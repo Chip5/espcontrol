@@ -49,7 +49,7 @@ export function runDeviceProfileTests(manifest: DeviceManifest, fixture: DeviceP
       } : {},
     };
     const state = createInitialState(deviceConfig);
-    equal(state.grid.length, profile.slots, `${slug} initial grid slots`);
+    equal(state.grid.length, Math.ceil(profile.slots / profile.layout.cols) * profile.layout.cols * 2, `${slug} initial half-row grid cells`);
     equal(state.buttons.length, profile.slots, `${slug} initial card slots`);
     equal(state.screenRotationInitialReady, !profile.rotation.enabled, `${slug} rotation readiness`);
   }

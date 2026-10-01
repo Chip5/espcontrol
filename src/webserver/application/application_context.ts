@@ -80,6 +80,7 @@ export interface ApplicationLayoutState {
   deviceId: string;
   config: DeviceConfig;
   numSlots: number;
+  readonly gridCells: number;
   totalSlots: number;
   gridCols: number;
   gridRows: number;
@@ -273,6 +274,7 @@ export function createApplicationLayoutState(
     deviceId,
     config,
     numSlots: config.slots,
+    get gridCells() { return Math.ceil(this.numSlots / this.gridCols) * this.gridCols * 2; },
     totalSlots: config.slots,
     gridCols: config.cols,
     gridRows: config.rows,

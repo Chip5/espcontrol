@@ -42,7 +42,7 @@ export function runStateContractTests(): void {
     features: { screenRotation: true, screenRotationDefault: "180", screenRotationOptions: ["0", "180"] },
   }));
   const second = createInitialState(deviceConfig());
-  equal(first.grid.length, 4, "startup creates one grid slot per device slot");
+  equal(first.grid.length, 8, "startup creates two half-row cells per display row");
   equal(first.buttons.length, 4, "startup creates one card per device slot");
   equal(first.buttons[0]?.icon, "Auto", "startup card defaults remain compatible");
   equal(first.screenRotation, "180", "startup uses the device rotation default");

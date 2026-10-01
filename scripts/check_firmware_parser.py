@@ -96,7 +96,7 @@ struct lv_obj_t {
   int width = 480;
   void *user_data = nullptr;
 };
-constexpr int MAX_GRID_SLOTS = 25;
+#include "button_grid_limits.h"
 inline int bounded_grid_slots(int num_slots) {
   if (num_slots < 0) return 0;
   return num_slots > MAX_GRID_SLOTS ? MAX_GRID_SLOTS : num_slots;
@@ -857,6 +857,20 @@ int main() {
   assert(screen_schedule_normal_active("sensor", true, false, false, 0, 6, 23, "Sensor On"));
   assert(!screen_schedule_normal_active("sensor", true, true, false, 0, 6, 23, "Sensor On"));
   assert(rise_h == 6 && rise_m == 0 && set_h == 18 && set_m == 0);
+
+  OrderResult legacy_half, legacy_half_safe;
+  parse_order_string("1,2,3,4,5,6", 20, legacy_half, 5);
+  clear_spanned_cells(legacy_half, 20, 5, legacy_half_safe);
+  assert(legacy_half_safe.positions[10] == 6);
+  assert(legacy_half_safe.positions[5] == 0);
+  OrderResult compact_half, compact_safe;
+  parse_order_string("H:1c,2,,,,3c", 20, compact_half, 5);
+  clear_spanned_cells(compact_half, 20, 5, compact_safe);
+  assert(compact_safe.positions[0] == 1);
+  assert(compact_safe.positions[5] == 3);
+  assert(compact_safe.compact[0] && compact_safe.compact[2]);
+  assert(!compact_safe.compact[1]);
+  assert(compact_safe.positions[6] == 0);
 
   OrderResult parsed;
   parse_order_string("1,2d,3w,4b,5t,6x,7h,8v,9l,10u,99", 11, parsed);

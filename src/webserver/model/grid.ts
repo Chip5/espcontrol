@@ -12,6 +12,20 @@ export const CARD_SIZE_MAX_TALL = 9;
 export const CARD_SIZE_PORTRAIT_LARGE = 10;
 export const CARD_SIZE_LANDSCAPE_LARGE = 11;
 export const CARD_SIZE_ULTRA_WIDE = 12;
+export const CARD_SIZE_COMPACT = 13;
+
+// Orders with this prefix use half-row coordinates. Unprefixed orders retain
+// their original coordinates so existing backups and installations stay valid.
+export function cardSupportsCompactSize(card: {type?: string} | null | undefined): boolean {
+  return ["", "action", "push", "subpage", "light_switch", "internal", "webhook"].includes(card?.type || "");
+}
+export const HALF_ROW_ORDER_PREFIX = "H:";
+export function gridPositionCount(slots: number, cols: number, rowScale = 1): number {
+  return rowScale === 1 ? slots : Math.ceil(slots / cols) * cols * rowScale;
+}
+export function scaleGridPosition(position: number, cols: number, rowScale: number): number {
+  return Math.floor(position / cols) * cols * rowScale + position % cols;
+}
 
 export interface CardSizeDefinition {
   size: number;
@@ -31,6 +45,7 @@ const CARD_SIZE_SINGLE_DEFINITION: CardSizeDefinition = {
 
 export const CARD_SIZE_DEFINITIONS: readonly CardSizeDefinition[] = [
   CARD_SIZE_SINGLE_DEFINITION,
+  { size: CARD_SIZE_COMPACT, token: "c", rowSpan: 0.5, colSpan: 1, className: "sp-btn-compact" },
   { size: CARD_SIZE_TALL, token: "d", rowSpan: 2, colSpan: 1, className: "sp-btn-double" },
   { size: CARD_SIZE_WIDE, token: "w", rowSpan: 1, colSpan: 2, className: "sp-btn-wide" },
   { size: CARD_SIZE_LARGE, token: "b", rowSpan: 2, colSpan: 2, className: "sp-btn-big" },
@@ -73,8 +88,8 @@ export function sizeToken(size: number | null | undefined): string {
   return cardSizeDefinition(size).token;
 }
 
-export function sizeRowSpan(size: number | null | undefined): number {
-  return cardSizeDefinition(size).rowSpan;
+export function sizeRowSpan(size: number | null | undefined, rowScale = 1): number {
+  return Math.max(1, cardSizeDefinition(size).rowSpan * rowScale);
 }
 
 export function sizeColSpan(size: number | null | undefined): number {
@@ -91,9 +106,10 @@ export function coveredCells(
   _maxSlots: number,
   gridCols: number,
   includeOrigin: boolean,
+  rowScale = 1,
 ): number[] {
   const cells: number[] = [];
-  const rowSpan = sizeRowSpan(size);
+  const rowSpan = sizeRowSpan(size, rowScale);
   const colSpan = sizeColSpan(size);
   for (let r = 0; r < rowSpan; r += 1) {
     for (let c = 0; c < colSpan; c += 1) {
@@ -109,14 +125,15 @@ export function sizeFitsAt(
   size: number | null | undefined,
   maxSlots: number,
   gridCols: number,
+  rowScale = 1,
 ): boolean {
   if (pos < 0 || pos >= maxSlots || gridCols <= 0) return false;
   const col = pos % gridCols;
   const row = Math.floor(pos / gridCols);
   const rows = Math.ceil(maxSlots / gridCols);
   return col + sizeColSpan(size) <= gridCols &&
-    row + sizeRowSpan(size) <= rows &&
-    pos + (sizeRowSpan(size) - 1) * gridCols + sizeColSpan(size) - 1 < maxSlots;
+    row + sizeRowSpan(size, rowScale) <= rows &&
+    pos + (sizeRowSpan(size, rowScale) - 1) * gridCols + sizeColSpan(size) - 1 < maxSlots;
 }
 
 export function markSpannedCells(
@@ -125,8 +142,9 @@ export function markSpannedCells(
   size: number | null | undefined,
   maxSlots: number,
   gridCols: number,
+  rowScale = 1,
 ): void {
-  const cells = coveredCells(pos, size, maxSlots, gridCols, false);
+  const cells = coveredCells(pos, size, maxSlots, gridCols, false, rowScale);
   for (const cell of cells) {
     if (cell >= 0 && cell < maxSlots) grid[cell] = -1;
   }
@@ -137,6 +155,7 @@ export function applySpans(
   sizes: SlotSizeMap,
   maxSlots: number,
   gridCols: number,
+  rowScale = 1,
 ): void {
   const entries = grid.slice(0, maxSlots);
   interface GridEntry {
@@ -154,18 +173,18 @@ export function applySpans(
     const candidates: number[] = [];
     for (let offset = 0; offset < maxSlots; offset += 1) {
       const candidate = (i + offset) % maxSlots;
-      if (sizeFitsAt(candidate, size, maxSlots, gridCols)) candidates.push(candidate);
+      if (sizeFitsAt(candidate, size, maxSlots, gridCols, rowScale)) candidates.push(candidate);
     }
     items.push({
       slot,
       originalPos: i,
       size,
-      area: sizeRowSpan(size) * sizeColSpan(size),
+      area: sizeRowSpan(size, rowScale) * sizeColSpan(size),
       candidates,
     });
   }
   const multiItems = items
-    .filter((item) => item.size > 1)
+    .filter((item) => item.area > 1)
     .sort((a, b) => a.candidates.length - b.candidates.length || b.area - a.area || a.originalPos - b.originalPos);
   let bestPenalty = Number.POSITIVE_INFINITY;
   let bestGrid: number[] | null = null;
@@ -173,27 +192,30 @@ export function applySpans(
 
   const canPlace = (targetGrid: readonly number[], pos: number, itemSize: number): boolean => {
     if (targetGrid[pos] !== 0) return false;
-    return coveredCells(pos, itemSize, maxSlots, gridCols, true).every((cell) => targetGrid[cell] === 0);
+    return coveredCells(pos, itemSize, maxSlots, gridCols, true, rowScale).every((cell) => targetGrid[cell] === 0);
   };
   const place = (targetGrid: number[], item: GridEntry, pos: number): void => {
     targetGrid[pos] = item.slot;
-    markSpannedCells(targetGrid, pos, item.size, maxSlots, gridCols);
+    markSpannedCells(targetGrid, pos, item.size, maxSlots, gridCols, rowScale);
   };
   const completeWithSingles = (
     targetGrid: number[],
     downgraded: Record<string, boolean>,
     penalty: number,
   ): boolean => {
-    const singleItems = items.filter((item) => item.size <= 1 || downgraded[String(item.slot)]);
+    const singleItems = items.filter((item) => item.area <= 1 || downgraded[String(item.slot)]);
     if (targetGrid.filter((cell) => cell === 0).length < singleItems.length) return false;
     for (const item of singleItems) {
-      let destination = targetGrid[item.originalPos] === 0 ? item.originalPos : -1;
+      const fallbackSize = downgraded[String(item.slot)] ? CARD_SIZE_SINGLE : item.size;
+      const fits = (pos: number) => sizeFitsAt(pos, fallbackSize, maxSlots, gridCols, rowScale) && canPlace(targetGrid, pos, fallbackSize);
+      let destination = fits(item.originalPos) ? item.originalPos : -1;
       for (let offset = 0; destination < 0 && offset < maxSlots; offset += 1) {
         const candidate = (item.originalPos + offset) % maxSlots;
-        if (targetGrid[candidate] === 0) destination = candidate;
+        if (fits(candidate)) destination = candidate;
       }
       if (destination < 0) return false;
       targetGrid[destination] = item.slot;
+      markSpannedCells(targetGrid, destination, fallbackSize, maxSlots, gridCols, rowScale);
     }
     if (penalty < bestPenalty) {
       bestPenalty = penalty;
@@ -237,27 +259,33 @@ export function parseGridOrder(
   maxSlots: number,
   gridCols: number,
   initialSizes?: SlotSizeMap,
+  rowScale = 1,
 ): ParsedGridOrder {
+  const slotLimit = maxSlots;
+  maxSlots = gridPositionCount(slotLimit, gridCols, rowScale);
   const grid = Array<number>(maxSlots).fill(0);
   const sizes = copySizes(initialSizes);
   if (!order || !order.trim()) return { grid, sizes };
-  const parts = order.split(",");
+  const halfRows = order.startsWith(HALF_ROW_ORDER_PREFIX);
+  const parts = (halfRows ? order.slice(HALF_ROW_ORDER_PREFIX.length) : order).split(",");
   for (let i = 0; i < parts.length && i < maxSlots; i += 1) {
     const value = (parts[i] || "").trim();
     if (!value) continue;
     const last = value.charAt(value.length - 1);
     const parsedSize = sizeFromToken(last);
     const slot = parseInt(value, 10);
-    if (slot >= 1 && slot <= maxSlots && !Number.isNaN(slot)) {
-      grid[i] = slot;
+    if (slot >= 1 && slot <= slotLimit && !Number.isNaN(slot)) {
+      const pos = !halfRows ? scaleGridPosition(i, gridCols, rowScale) : i;
+      if (pos >= maxSlots) continue;
+      grid[pos] = slot;
       if (parsedSize > 1) sizes[String(slot)] = parsedSize;
     }
   }
-  applySpans(grid, sizes, maxSlots, gridCols);
+  applySpans(grid, sizes, maxSlots, gridCols, rowScale);
   return { grid, sizes };
 }
 
-export function serializeGridOrder(grid: readonly number[], sizes: SlotSizeMap): string {
+export function serializeGridOrder(grid: readonly number[], sizes: SlotSizeMap, gridCols = 0, rowScale = 1): string {
   let last = -1;
   for (let i = grid.length - 1; i >= 0; i -= 1) {
     if ((grid[i] ?? 0) > 0) {
@@ -266,7 +294,14 @@ export function serializeGridOrder(grid: readonly number[], sizes: SlotSizeMap):
     }
   }
   if (last < 0) return "";
-  return grid.slice(0, last + 1).map((slot) => {
+  // Emit the legacy format whenever no half-row coordinates are needed.
+  const legacy = rowScale === 1 || (gridCols > 0 && grid.every((slot, pos) =>
+    slot <= 0 || (Math.floor(pos / gridCols) % rowScale === 0 && sizes[String(slot)] !== CARD_SIZE_COMPACT)));
+  const cells = legacy && rowScale > 1
+    ? grid.filter((_, pos) => Math.floor(pos / gridCols) % rowScale === 0)
+    : grid.slice(0, last + 1);
+  while (cells.length && (cells[cells.length - 1] ?? 0) <= 0) cells.pop();
+  return (legacy ? "" : HALF_ROW_ORDER_PREFIX) + cells.map((slot) => {
     if (slot <= 0) return "";
     return String(slot) + sizeToken(sizes[String(slot)]);
   }).join(",");
