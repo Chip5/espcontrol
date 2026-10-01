@@ -979,7 +979,7 @@
       }
     },
     "guition-esp32-p4-jc8012p4a1-v3": {
-      "slots": 20,
+      "slots": 25,
       "capabilities": {
         "imageSlots": 6
       },
@@ -992,8 +992,8 @@
       },
       "layout": {
         "cols": 5,
-        "rows": 4,
-        "firmwareGrid": "5x4",
+        "rows": 5,
+        "firmwareGrid": "5x5",
         "portraitCols": 4
       },
       "rotation": {

@@ -24,12 +24,17 @@
     }
   },
   "overrides": {
-    "firmware": {
-      "package": {
-        "substitutions": {
-          "clock_font_size": "\"200\""
-        }
+      "slots": 25,
+      "layout": {
+          "rows": 5,
+          "firmwareGrid": "5x5"
+      },
+      "firmware": {
+          "package": {
+              "substitutions": {
+                  "clock_font_size": "\"200\""
+              }
+          }
       }
-    }
   }
 }
