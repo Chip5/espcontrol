@@ -1,5 +1,5 @@
 import { state } from "../state/app_instance";
-import { serializeGridOrder } from "../model";
+import { serializeGridOrder, scaleGridPosition, markSpannedCells } from "../model";
 import type { ApplicationLayoutState } from "./application_context";
 import type { UiRuntimeState } from "./state";
 
@@ -20,7 +20,7 @@ export function createGridMigrationFeature(
   dependencies: GridMigrationDependencies,
 ): GridMigrationFeature {
   function hasConfiguredGrid(): boolean {
-    for (let index = 0; index < layout.numSlots; index++) {
+    for (let index = 0; index < layout.gridCells; index++) {
       if ((state.grid[index] ?? 0) > 0) return true;
     }
     return false;
@@ -34,14 +34,16 @@ export function createGridMigrationFeature(
       let position = 0;
       for (let index = 0; index < layout.numSlots; index++) {
         if (state.buttons[index]?.entity && position < layout.numSlots) {
-          state.grid[position] = index + 1;
+          const pos = scaleGridPosition(position, layout.gridCols, 2);
+          state.grid[pos] = index + 1;
+          markSpannedCells(state.grid, pos, 1, layout.gridCells, layout.gridCols, 2);
           position++;
         }
       }
       if (position > 0) {
         dependencies.renderPreview();
         dependencies.renderButtonSettings();
-        dependencies.postOrder(serializeGridOrder(state.grid, state.sizes));
+        dependencies.postOrder(serializeGridOrder(state.grid, state.sizes, layout.gridCols, 2));
       }
     }, 2000);
   }

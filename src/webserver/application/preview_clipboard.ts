@@ -221,7 +221,7 @@ export function createPreviewClipboardFeature(
             targetSizes[requestedSlot] = normalizeCardSizeForConfig(requestedButton, requestedSizes[requestedSlot]);
         }
         var placementOrder: any = layoutSlots.length <= dependencies.layout.numSlots ? layoutSlots : orderedSlots;
-        var targetGrid: any = placeOrderedGridEntries(placementOrder, targetSizes, dependencies.layout.numSlots);
+        var targetGrid: any = placeOrderedGridEntries(placementOrder, targetSizes, dependencies.layout.gridCells);
         var placed: any = {};
         targetGrid.forEach(function (slot: any) {
             if (slot > 0 || slot === -2)
@@ -364,7 +364,7 @@ export function createPreviewClipboardFeature(
                 return { error: "There is not enough room to paste every card." };
             var entry: any = entries[i];
             var requestedSize: any = entry.size || 1;
-            var placement: any = findDuplicatePlacement(nextGrid, pos, requestedSize, dependencies.layout.numSlots);
+            var placement: any = findDuplicatePlacement(nextGrid, pos, requestedSize, dependencies.layout.gridCells);
             if (placement.pos < 0)
                 return { error: "There is not enough room to paste every card." };
             if (placement.size !== requestedSize)
@@ -432,7 +432,7 @@ export function createPreviewClipboardFeature(
             if (newSlot < 0)
                 return { error: "There is not enough room to paste every card." };
             var requestedSize: any = entry.size || 1;
-            var placement: any = findDuplicatePlacement(subpage.grid, pos, requestedSize, dependencies.layout.numSlots);
+            var placement: any = findDuplicatePlacement(subpage.grid, pos, requestedSize, dependencies.layout.gridCells);
             if (placement.pos < 0)
                 return { error: "There is not enough room to paste every card." };
             if (placement.size !== requestedSize)

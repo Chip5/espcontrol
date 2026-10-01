@@ -852,14 +852,14 @@ assert.deepStrictEqual({
   grid: Array.from(importedPlainOrder.grid),
   sizes: Object.assign({}, importedPlainOrder.sizes),
 }, {
-  grid: [1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  grid: [1, 2, 3, 0, 0, -1, -1, -1, 0, 0].concat(Array(20).fill(0)),
   sizes: {},
 }, "same-size imports clear stale button sizing");
 const importedSizedOrder = hooks.importedButtonOrderFor("1d,2,3", {});
 assert.strictEqual(importedSizedOrder.sizes["1"], 2, "imported button sizing is preserved");
 const importedExtraTallOrder = hooks.importedButtonOrderFor("1t,2,3", {});
 assert.strictEqual(importedExtraTallOrder.sizes["1"], 5, "imported extra tall sizing is preserved");
-assert.deepStrictEqual(Array.from(importedExtraTallOrder.grid.slice(0, 11)), [1, 2, 3, 0, 0, -1, 0, 0, 0, 0, -1], "extra tall spans three rows");
+assert.deepStrictEqual(Array.from(importedExtraTallOrder.grid.slice(0, 11)), [1, 2, 3, 0, 0, -1, -1, -1, 0, 0, -1], "extra tall spans six half-rows");
 const importedExtraWideOrder = hooks.importedButtonOrderFor("1x,2,3", {});
 assert.strictEqual(importedExtraWideOrder.sizes["1"], 6, "imported extra wide sizing is preserved");
 assert.deepStrictEqual(Array.from(importedExtraWideOrder.grid.slice(0, 5)), [1, -1, -1, 2, 3], "extra wide spans three columns");

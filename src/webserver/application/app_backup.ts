@@ -378,10 +378,10 @@ export function createAppBackupFeature(controllers: AppBackupControllers): AppBa
                     nativeDocument.settings.button_order,
                     controllers.layout.numSlots,
                     importedGridCols,
-                    {});
+                    {}, 2);
                 nativeDocument.settings.button_order = EspControlModel.serializeGridOrder(
                     parsedButtonOrder.grid,
-                    parsedButtonOrder.sizes);
+                    parsedButtonOrder.sizes, importedGridCols, 2);
 
                 function readLegacyText(name: string) {
                     return requestApi.getJsonFirst(requestApi.entityDetailPaths("text", [name], "state"));

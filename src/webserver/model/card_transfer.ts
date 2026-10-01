@@ -78,11 +78,12 @@ function normalizeTransferSubpage(value: unknown, context: string): StructuredSu
     throw transferError("Invalid card code - " + context + " has an invalid card list");
   }
   const buttons = value.buttons;
-  if (!Array.isArray(value.order) || !value.order.every((item) => {
+  if (!Array.isArray(value.order) || !value.order.every((item, index) => {
     if (typeof item !== "string") return false;
+    if (index === 0 && item.startsWith("H:")) item = item.slice(2);
     if (!item) return true;
-    if (/^B(?:d|w|b|t|x)?$/.test(item)) return true;
-    const match = /^(\d+)(?:d|w|b|t|x|q|h|v|p|l)?$/.exec(item);
+    if (/^B(?:c|d|w|b|t|x)?$/.test(item)) return true;
+    const match = /^(\d+)(?:c|d|w|b|t|x|q|h|v|p|l|u)?$/.exec(item);
     return !!match && Number(match[1]) >= 1 && Number(match[1]) <= buttons.length;
   })) {
     throw transferError("Invalid card code - " + context + " has an invalid order");

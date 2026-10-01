@@ -1,7 +1,7 @@
 import type { CardConfig } from "../contracts/types";
 import { cloneCardConfig } from "./card";
 import { decodeConfigField, encodeConfigField } from "./config_primitives";
-import { applySpans, sizeFromToken, sizeToken, type SlotSizeMap } from "./grid";
+import { CARD_SIZE_COMPACT, HALF_ROW_ORDER_PREFIX, gridPositionCount, scaleGridPosition, applySpans, sizeFromToken, sizeToken, type SlotSizeMap } from "./grid";
 
 export interface BackOrderToken {
   token: string;
@@ -33,7 +33,7 @@ export interface SubpageGridSource {
   backLabel?: string;
 }
 
-const BACK_TOKENS = new Set(["B", "Bd", "Bw", "Bb", "Bt", "Bx"]);
+const BACK_TOKENS = new Set(["B", "Bc", "Bd", "Bw", "Bb", "Bt", "Bx"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -45,7 +45,7 @@ function stringField(record: Record<string, unknown>, key: string, fallback = ""
 }
 
 export function isBackOrderToken(token: string | null | undefined): boolean {
-  return BACK_TOKENS.has(String(token || ""));
+  return BACK_TOKENS.has(String(token || "").replace(/^H:/, ""));
 }
 
 export function parseBackOrderToken(value: string | null | undefined): BackOrderToken {
@@ -53,7 +53,7 @@ export function parseBackOrderToken(value: string | null | undefined): BackOrder
   const eq = raw.indexOf("=");
   const token = eq >= 0 ? raw.substring(0, eq) : raw;
   const label = eq >= 0 ? decodeConfigField(raw.substring(eq + 1)) : "Back";
-  if (!BACK_TOKENS.has(token)) {
+  if (!isBackOrderToken(token)) {
     return { token: raw, label: "Back" };
   }
   return { token, label: label || "Back" };
@@ -68,7 +68,7 @@ export function backOrderToken(baseToken: string, label: string | null | undefin
 export function backLabelFromOrder(order: readonly string[] | null | undefined): string {
   for (const item of order || []) {
     const parsed = parseBackOrderToken(item);
-    if (BACK_TOKENS.has(parsed.token)) {
+    if (isBackOrderToken(parsed.token)) {
       return parsed.label || "Back";
     }
   }
@@ -83,7 +83,7 @@ export function parseSubpageOrder(orderStr: string | null | undefined): ParsedSu
     for (const part of parts) {
       const parsed = parseBackOrderToken(part);
       order.push(parsed.token);
-      if (BACK_TOKENS.has(parsed.token)) {
+      if (isBackOrderToken(parsed.token)) {
         backLabel = parsed.label || "Back";
       }
     }
@@ -98,7 +98,7 @@ export function subpageOrderForSerialize(
   const out: string[] = [];
   for (const item of order || []) {
     const parsed = parseBackOrderToken(item);
-    if (BACK_TOKENS.has(parsed.token)) {
+    if (isBackOrderToken(parsed.token)) {
       out.push(backOrderToken(parsed.token, backLabel || parsed.label || "Back"));
     } else {
       out.push(parsed.token);
@@ -303,19 +303,24 @@ export function buildSubpageGrid(
   subpage: SubpageGridSource,
   maxSlots: number,
   gridCols: number,
+  rowScale = 1,
 ): { grid: number[]; sizes: SlotSizeMap } {
+  maxSlots = gridPositionCount(maxSlots, gridCols, rowScale);
   const grid = Array<number>(maxSlots).fill(0);
   const sizes: SlotSizeMap = { ...(subpage.sizes || {}) };
-  const order = subpage.order || [];
+  const rawOrder = (subpage.order || []).join(",");
+  const halfRows = rawOrder.startsWith(HALF_ROW_ORDER_PREFIX);
+  const order = rawOrder ? (halfRows ? rawOrder.slice(HALF_ROW_ORDER_PREFIX.length) : rawOrder).split(",") : [];
+  const position = (pos: number) => halfRows ? pos : scaleGridPosition(pos, gridCols, rowScale);
   const buttonCount = (subpage.buttons || []).length;
   if (order.length > 0) {
     const hasBack = order.some((item) => isBackOrderToken(parseBackOrderToken(item).token));
     if (hasBack) {
-      for (let i = 0; i < order.length && i < maxSlots; i += 1) {
+      for (let i = 0; i < order.length && position(i) < maxSlots; i += 1) {
         const token = parseBackOrderToken(order[i]).token;
         if (!token) continue;
         if (isBackOrderToken(token)) {
-          grid[i] = -2;
+          grid[position(i)] = -2;
           const backSize = sizeFromToken(token.charAt(1));
           if (backSize > 1) sizes[String(-2)] = backSize;
           else delete sizes[String(-2)];
@@ -325,21 +330,21 @@ export function buildSubpageGrid(
         const parsedSize = sizeFromToken(last);
         const slot = parseInt(token, 10);
         if (slot >= 1 && slot <= buttonCount && !Number.isNaN(slot)) {
-          grid[i] = slot;
+          grid[position(i)] = slot;
           if (parsedSize > 1) sizes[String(slot)] = parsedSize;
         }
       }
     } else {
       grid[0] = -2;
       delete sizes[String(-2)];
-      for (let i = 0; i < order.length && i + 1 < maxSlots; i += 1) {
+      for (let i = 0; i < order.length && position(i + 1) < maxSlots; i += 1) {
         const token = parseBackOrderToken(order[i]).token;
         if (!token) continue;
         const last = token.charAt(token.length - 1);
         const parsedSize = sizeFromToken(last);
         const slot = parseInt(token, 10);
         if (slot >= 1 && slot <= buttonCount && !Number.isNaN(slot)) {
-          grid[i + 1] = slot;
+          grid[position(i + 1)] = slot;
           if (parsedSize > 1) sizes[String(slot)] = parsedSize;
         }
       }
@@ -348,7 +353,7 @@ export function buildSubpageGrid(
     grid[0] = -2;
     delete sizes[String(-2)];
   }
-  applySpans(grid, sizes, maxSlots, gridCols);
+  applySpans(grid, sizes, maxSlots, gridCols, rowScale);
   return { grid, sizes };
 }
 
@@ -356,6 +361,8 @@ export function serializeSubpageGrid(
   grid: readonly number[],
   sizes: SlotSizeMap,
   backLabel?: string | null,
+  gridCols = 0,
+  rowScale = 1,
 ): string[] {
   let last = -1;
   for (let i = grid.length - 1; i >= 0; i -= 1) {
@@ -366,8 +373,11 @@ export function serializeSubpageGrid(
     }
   }
   if (last < 0) return [];
+  const legacy = rowScale === 1 || (gridCols > 0 && grid.every((slot, pos) =>
+    !(slot > 0 || slot === -2) || (Math.floor(pos / gridCols) % rowScale === 0 && sizes[String(slot)] !== CARD_SIZE_COMPACT)));
   const order: string[] = [];
   for (let i = 0; i <= last; i += 1) {
+    if (legacy && rowScale > 1 && Math.floor(i / gridCols) % rowScale !== 0) continue;
     const slot = grid[i] ?? 0;
     if (slot === -2) {
       order.push(backOrderToken("B" + sizeToken(sizes[String(-2)]), backLabel || "Back"));
@@ -377,5 +387,6 @@ export function serializeSubpageGrid(
       order.push(String(slot) + sizeToken(sizes[String(slot)]));
     }
   }
+  if (!legacy && order.length) order[0] = HALF_ROW_ORDER_PREFIX + order[0];
   return order;
 }

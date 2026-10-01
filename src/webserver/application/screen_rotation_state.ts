@@ -108,7 +108,7 @@ export function createScreenRotationFeature(
     function applyDeferredButtonOrder(rawOrder?: any, onNormalized?: any) {
         var receivedOrder: any = String(rawOrder || "").trim();
         dependencies.applyButtonOrder(receivedOrder, true);
-        var normalizedOrder: any = EspControlModel.serializeGridOrder(state.grid, state.sizes);
+        var normalizedOrder: any = EspControlModel.serializeGridOrder(state.grid, state.sizes, layout.gridCols, 2);
         if (normalizedOrder !== receivedOrder && typeof onNormalized === "function")
             onNormalized(normalizedOrder);
         return normalizedOrder;

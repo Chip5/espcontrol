@@ -39,12 +39,12 @@ export function createPreviewGridPlacementFeature(
     // ── Preview Grid Placement ────────────────────────────────────────
     function resolveSpanPos(this: any, pos?: any) {
         var c: any = ctx();
-        return resolveSpanPosition(c.grid, c.sizes, pos, c.maxSlots, dependencies.layout.gridCols);
+        return resolveSpanPosition(c.grid, c.sizes, pos, c.maxSlots, dependencies.layout.gridCols, 2);
     }
     function getCellFromEvent(this: any, e?: any, container?: any) {
         if (dependencies.layout.config.dragMode === "swap") {
             var rect: any = container.getBoundingClientRect();
-            return resolveSpanPos(swapGridCell({ x: e.clientX, y: e.clientY }, { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }, dependencies.layout.gridCols, dependencies.layout.gridRows));
+            return resolveSpanPos(swapGridCell({ x: e.clientX, y: e.clientY }, { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }, dependencies.layout.gridCols, dependencies.layout.gridRows * 2));
         }
         var children: any = container.children;
         var cells: any = [];
@@ -73,19 +73,19 @@ export function createPreviewGridPlacementFeature(
         }
     }
     function canPlaceSlotAt(this: any, grid?: any, pos?: any, size?: any, maxSlots?: any) {
-        return canPlaceSlotAtInGrid(grid, pos, size, maxSlots, dependencies.layout.gridCols);
+        return canPlaceSlotAtInGrid(grid, pos, size, maxSlots, dependencies.layout.gridCols, 2);
     }
     function findPlacementCell(this: any, grid?: any, start?: any, size?: any, maxSlots?: any) {
-        return findPlacementCellInGrid(grid, start, size, maxSlots, dependencies.layout.gridCols);
+        return findPlacementCellInGrid(grid, start, size, maxSlots, dependencies.layout.gridCols, 2);
     }
     function findDuplicatePlacement(this: any, grid?: any, start?: any, size?: any, maxSlots?: any) {
-        return findDuplicatePlacementInGrid(grid, start, size, maxSlots, dependencies.layout.gridCols);
+        return findDuplicatePlacementInGrid(grid, start, size, maxSlots, dependencies.layout.gridCols, 2);
     }
     function placeSlotAt(this: any, grid?: any, slot?: any, pos?: any, size?: any) {
-        placeSlotAtInGrid(grid, slot, pos, size, dependencies.layout.gridCols);
+        placeSlotAtInGrid(grid, slot, pos, size, dependencies.layout.gridCols, 2);
     }
     function placeOrderedGridEntries(this: any, entries?: any, sizes?: any, maxSlots?: any) {
-        return placeOrderedGridEntriesInGrid(entries, sizes, maxSlots, dependencies.layout.gridCols);
+        return placeOrderedGridEntriesInGrid(entries, sizes, maxSlots, dependencies.layout.gridCols, 2);
     }
     function moveSelectedToCell(this: any, fromPos?: any, toPos?: any) {
         var c: any = ctx();

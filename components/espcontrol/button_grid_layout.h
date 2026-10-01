@@ -85,7 +85,9 @@ inline void apply_slot_text_width_compensation(const BtnSlot &s, int percent) {
 
 // Result of parsing a button_order CSV string into grid cell positions
 struct OrderResult {
-  int positions[MAX_GRID_SLOTS] = {};    // slot number at each grid position (1-based, 0=empty)
+  bool half_rows = false;
+  bool compact[MAX_GRID_SLOTS] = {};
+  int positions[MAX_GRID_POSITIONS] = {};    // slot number at each grid position (1-based, 0=empty)
   int row_span[MAX_GRID_SLOTS] = {};     // number of grid rows used by each slot
   int col_span[MAX_GRID_SLOTS] = {};     // number of grid columns used by each slot
 };
@@ -187,7 +189,7 @@ inline bool grid_token_has_span_suffix(char suffix) {
     suffix == CARD_SIZE_EXTRA_WIDE_TOKEN || suffix == CARD_SIZE_EXTRA_LARGE_TOKEN ||
     suffix == CARD_SIZE_MAX_WIDE_TOKEN || suffix == CARD_SIZE_MAX_TALL_TOKEN ||
     suffix == CARD_SIZE_PORTRAIT_LARGE_TOKEN || suffix == CARD_SIZE_LANDSCAPE_LARGE_TOKEN ||
-    suffix == CARD_SIZE_ULTRA_WIDE_TOKEN;
+    suffix == CARD_SIZE_ULTRA_WIDE_TOKEN || suffix == 'c';
 }
 
 inline int parse_positive_int_span(const std::string &value, size_t start, size_t end) {
@@ -204,7 +206,9 @@ inline int parse_positive_int_span(const std::string &value, size_t start, size_
 }
 
 // Parse "1,2d,3w,4b,5t,6x,..." into positions + row/column spans
-inline void parse_order_string(const std::string &order_str, int num_slots, OrderResult &result) {
+inline void parse_order_string(const std::string &order_str, int num_slots, OrderResult &result, int cols = 0) {
+  result = OrderResult{};
+  result.half_rows = cols > 0;
   memset(result.positions, 0, sizeof(result.positions));
   for (int i = 0; i < MAX_GRID_SLOTS; i++) {
     result.row_span[i] = 1;
@@ -212,23 +216,30 @@ inline void parse_order_string(const std::string &order_str, int num_slots, Orde
   }
   int slot_limit = bounded_grid_slots(num_slots);
   if (order_str.empty()) return;
-  size_t gpos = 0, start = 0;
-  while (start <= order_str.length() && gpos < (size_t)slot_limit) {
+  const bool encoded_half_rows = order_str.compare(0, 2, "H:") == 0;
+  const int position_limit = encoded_half_rows && cols > 0 ? grid_position_count(num_slots, cols) : slot_limit;
+  size_t gpos = 0, start = encoded_half_rows ? 2 : 0;
+  while (start <= order_str.length() && gpos < (size_t)position_limit) {
     size_t comma = order_str.find(',', start);
     if (comma == std::string::npos) comma = order_str.length();
     if (comma > start) {
       size_t token_end = comma;
       int row_span = 1, col_span = 1;
+      bool compact = false;
       while (token_end > start && std::isspace(static_cast<unsigned char>(order_str[token_end - 1]))) {
         token_end--;
       }
       if (token_end > start && grid_token_has_span_suffix(order_str[token_end - 1])) {
+        compact = order_str[token_end - 1] == 'c';
         grid_token_spans(order_str[token_end - 1], row_span, col_span);
         token_end--;
       }
       int v = parse_positive_int_span(order_str, start, token_end);
       if (v >= 1 && v <= slot_limit) {
-        result.positions[gpos] = v;
+        const int position = cols > 0 && !encoded_half_rows ? (gpos / cols) * cols * 2 + gpos % cols : gpos;
+        if (position >= MAX_GRID_POSITIONS) break;
+        result.positions[position] = v;
+        result.compact[v - 1] = compact;
         result.row_span[v - 1] = row_span;
         result.col_span[v - 1] = col_span;
       }
@@ -243,49 +254,41 @@ inline void parse_order_string(const std::string &order_str, int num_slots, Orde
 // cell coordinates to LVGL.
 inline void normalize_grid_span_for_position(int position, int num_slots,
                                              int cols, int &row_span,
-                                             int &col_span) {
-  int slot_limit = bounded_grid_slots(num_slots);
+                                             int &col_span, bool half_rows = false) {
+  int slot_limit = half_rows ? grid_position_count(num_slots, cols) : bounded_grid_slots(num_slots);
   if (position < 0 || position >= slot_limit || cols <= 0) {
-    row_span = 1;
-    col_span = 1;
-    return;
+    row_span = 1; col_span = 1; return;
   }
   if (row_span < 1) row_span = 1;
   if (col_span < 1) col_span = 1;
-  int rows = (slot_limit + cols - 1) / cols;
-  int row = position / cols;
-  int col = position % cols;
-  int last_cell = position + (row_span - 1) * cols + col_span - 1;
-  if (row + row_span > rows || col + col_span > cols ||
-      last_cell >= slot_limit) {
-    row_span = 1;
+  const int last = position + (row_span - 1) * cols + col_span - 1;
+  if (position % cols + col_span > cols || last >= slot_limit) {
+    row_span = half_rows ? 2 : 1;
     col_span = 1;
   }
 }
 
-// Zero out grid cells that are covered by a neighbouring multi-cell button
 inline void clear_spanned_cells(const OrderResult &order, int num_slots, int cols, OrderResult &result) {
-  int slot_limit = bounded_grid_slots(num_slots);
-  for (int p = 0; p < slot_limit; p++) {
-    result.positions[p] = order.positions[p];
-    result.row_span[p] = order.row_span[p] > 0 ? order.row_span[p] : 1;
-    result.col_span[p] = order.col_span[p] > 0 ? order.col_span[p] : 1;
-  }
-  for (int p = 0; p < slot_limit; p++) {
-    if (result.positions[p] <= 0) continue;
-    int idx = result.positions[p] - 1;
-    int row_span = result.row_span[idx] > 0 ? result.row_span[idx] : 1;
-    int col_span = result.col_span[idx] > 0 ? result.col_span[idx] : 1;
-    normalize_grid_span_for_position(p, slot_limit, cols, row_span, col_span);
-    result.row_span[idx] = row_span;
-    result.col_span[idx] = col_span;
-    int col = p % cols;
-    for (int r = 0; r < row_span; r++) {
-      for (int c = 0; c < col_span; c++) {
+  result = order;
+  const int count = order.half_rows ? grid_position_count(num_slots, cols) : bounded_grid_slots(num_slots);
+  for (int p = 0; p < count; p++) {
+    const int idx = result.positions[p] - 1;
+    if (idx < 0 || idx >= bounded_grid_slots(num_slots)) continue;
+    int rs = result.row_span[idx] > 0 ? result.row_span[idx] : 1;
+    int cs = result.col_span[idx] > 0 ? result.col_span[idx] : 1;
+    if (order.half_rows) rs = result.compact[idx] ? 1 : rs * 2;
+    normalize_grid_span_for_position(p, num_slots, cols, rs, cs, order.half_rows);
+    if (p + (rs - 1) * cols + cs - 1 >= count) {
+      result.positions[p] = 0;
+      continue;
+    }
+    result.row_span[idx] = order.half_rows && !result.compact[idx] ? rs / 2 : rs;
+    result.col_span[idx] = cs;
+    for (int r = 0; r < rs; r++) {
+      for (int c = 0; c < cs; c++) {
         if (r == 0 && c == 0) continue;
-        if (col + c >= cols) continue;
-        int covered = p + r * cols + c;
-        if (covered < slot_limit) result.positions[covered] = 0;
+        const int covered = p + r * cols + c;
+        if (covered < count) result.positions[covered] = 0;
       }
     }
   }
@@ -354,6 +357,14 @@ inline void set_grid_card_cell(lv_obj_t *btn,
   }
   clock_bar_register_responsive_grid_card(
     grid, btn, col, row, col_span, row_span, cols, rows);
+}
+
+// Runtime grids use half-row tracks; style decisions keep normal tile spans.
+inline void set_half_row_card_cell(lv_obj_t *btn, lv_obj_t *grid,
+                                   int col, int row, int col_span, int row_span,
+                                   int cols, int rows, bool compact = false) {
+  set_grid_card_cell(btn, grid, col, row, col_span,
+                     compact ? 1 : row_span * 2, cols, rows);
 }
 
 // ── Button visuals ────────────────────────────────────────────────────

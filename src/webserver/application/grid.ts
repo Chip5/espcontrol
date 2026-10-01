@@ -40,7 +40,7 @@ export function createGridFeature(codec: ConfigCodecFeature, runtime: UiRuntimeS
             var sp: any = getSubpage(state.editingSubpage);
             return {
                 grid: sp.grid, sizes: sp.sizes, buttons: sp.buttons,
-                maxSlots: layout.numSlots, selected: state.subpageSelectedSlots,
+                maxSlots: layout.gridCells, rowScale: 2, selected: state.subpageSelectedSlots,
                 isSub: true,
                 setSelected: function (this: any, s?: any) { state.subpageSelectedSlots = s; },
                 setLastClicked: function (this: any, s?: any) { state.subpageLastClicked = s; },
@@ -50,7 +50,7 @@ export function createGridFeature(codec: ConfigCodecFeature, runtime: UiRuntimeS
         }
         return {
             grid: state.grid, sizes: state.sizes, buttons: state.buttons,
-            maxSlots: layout.numSlots, selected: state.selectedSlots,
+            maxSlots: layout.gridCells, rowScale: 2, selected: state.selectedSlots,
             isSub: false,
             setSelected: function (this: any, s?: any) { state.selectedSlots = s; },
             setLastClicked: function (this: any, s?: any) { state.lastClickedSlot = s; },
@@ -64,7 +64,7 @@ export function createGridFeature(codec: ConfigCodecFeature, runtime: UiRuntimeS
         return className ? " " + className : "";
     }
     function parseOrder(this: any, str?: any) {
-        var parsed: any = EspControlModel.parseGridOrder(str, layout.numSlots, layout.gridCols, state.sizes);
+        var parsed: any = EspControlModel.parseGridOrder(str, layout.numSlots, layout.gridCols, state.sizes, 2);
         state.sizes = parsed.sizes;
         return parsed.grid;
     }
@@ -79,7 +79,7 @@ export function createGridFeature(codec: ConfigCodecFeature, runtime: UiRuntimeS
             renderQueue.schedule();
     }
     function serializeGrid(this: any, grid?: any) {
-        return EspControlModel.serializeGridOrder(grid, state.sizes);
+        return EspControlModel.serializeGridOrder(grid, state.sizes, layout.gridCols, 2);
     }
     function applyImportedButtonOrder(this: any, orderStr?: any, importedSizes?: any) {
         state.sizes = importedSizes || {};

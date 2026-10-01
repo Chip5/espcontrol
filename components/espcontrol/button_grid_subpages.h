@@ -401,7 +401,7 @@ inline bool subpage_back_token_span(const std::string &order_str, size_t start, 
 
 inline std::string get_subpage_back_label(const std::string &order_str) {
   if (order_str.empty()) return espcontrol_i18n(std::string("Back"));
-  size_t st = 0;
+  size_t st = order_str.compare(0, 2, "H:") == 0 ? 2 : 0;
   while (st <= order_str.length()) {
     size_t cm = order_str.find(',', st);
     if (cm == std::string::npos) cm = order_str.length();
@@ -423,7 +423,10 @@ inline std::string get_subpage_back_label(const std::string &order_str) {
 
 // Subpage grid layout with support for a back button token ("B")
 struct SubpageOrder {
-  int positions[MAX_GRID_SLOTS] = {};
+  bool half_rows = false;
+  bool compact[MAX_GRID_SLOTS] = {};
+  bool back_compact = false;
+  int positions[MAX_GRID_POSITIONS] = {};
   int row_span[MAX_GRID_SLOTS] = {};
   int col_span[MAX_GRID_SLOTS] = {};
   int back_pos = 0;
@@ -519,37 +522,44 @@ inline void subscribe_climate_subpage_parent_indicator(
 
 // Parse subpage order CSV; "B"/"Bd"/"Bw"/"Bb"/"Bt"/"Bx" tokens mark the back button position
 inline void parse_subpage_order(const std::string &order_str, int num_slots, int num_btns,
-                                SubpageOrder &result) {
+                                SubpageOrder &result, int cols = 0) {
+  result = SubpageOrder{};
+  result.half_rows = cols > 0;
   int slot_limit = bounded_grid_slots(num_slots);
   int btn_limit = bounded_grid_slots(num_btns);
   for (int i = 0; i < MAX_GRID_SLOTS; i++) {
     result.row_span[i] = 1;
     result.col_span[i] = 1;
   }
-  if (order_str.empty()) return;
-  size_t gp2 = 0, st2 = 0;
-  while (st2 <= order_str.length() && gp2 < (size_t)slot_limit) {
+  const bool encoded_half_rows = order_str.compare(0, 2, "H:") == 0;
+  const int position_limit = encoded_half_rows && cols > 0 ? grid_position_count(num_slots, cols) : slot_limit;
+  size_t gp2 = 0, st2 = encoded_half_rows ? 2 : 0;
+  while (st2 <= order_str.length() && gp2 < (size_t)position_limit) {
     size_t cm = order_str.find(',', st2);
     if (cm == std::string::npos) cm = order_str.length();
     if (cm > st2) {
       char back_suffix = '\0';
       if (subpage_back_token_span(order_str, st2, cm, back_suffix)) {
+        result.back_compact = back_suffix == 'c';
         result.back_pos = gp2;
         grid_token_spans(back_suffix, result.back_row_span, result.back_col_span);
         result.has_back_token = true;
       } else {
         size_t token_end = cm;
         int row_span = 1, col_span = 1;
+        bool compact = false;
         while (token_end > st2 && std::isspace(static_cast<unsigned char>(order_str[token_end - 1]))) {
           token_end--;
         }
         if (token_end > st2 && grid_token_has_span_suffix(order_str[token_end - 1])) {
+          compact = order_str[token_end - 1] == 'c';
           grid_token_spans(order_str[token_end - 1], row_span, col_span);
           token_end--;
         }
         int v = parse_positive_int_span(order_str, st2, token_end);
         if (v >= 1 && v <= btn_limit) {
           result.positions[gp2] = v;
+          result.compact[v - 1] = compact;
           result.row_span[v - 1] = row_span;
           result.col_span[v - 1] = col_span;
         }
@@ -558,28 +568,35 @@ inline void parse_subpage_order(const std::string &order_str, int num_slots, int
     gp2++;
     st2 = cm + 1;
   }
+  if (cols > 0) {
+    // Resolve the legacy implicit Back cell before converting coordinates.
+    const int offset = result.has_back_token ? 0 : 1;
+    int positions[MAX_GRID_POSITIONS] = {};
+    for (int pos = 0; pos < position_limit; pos++) {
+      const int old_pos = pos + offset;
+      const int new_pos = encoded_half_rows ? old_pos : (old_pos / cols) * cols * 2 + old_pos % cols;
+      if (new_pos < grid_position_count(num_slots, cols)) positions[new_pos] = result.positions[pos];
+    }
+    memcpy(result.positions, positions, sizeof(positions));
+    if (!encoded_half_rows) result.back_pos = (result.back_pos / cols) * cols * 2 + result.back_pos % cols;
+    result.has_back_token = true;
+  }
 }
 
-inline void normalize_subpage_order_spans(SubpageOrder &order, int num_slots,
-                                          int cols) {
-  int slot_limit = bounded_grid_slots(num_slots);
-  if (order.has_back_token) {
-    normalize_grid_span_for_position(order.back_pos, slot_limit, cols,
-                                     order.back_row_span,
-                                     order.back_col_span);
-  }
-  for (int position = 0; position < slot_limit; position++) {
-    int button_index = order.positions[position];
-    if (button_index < 1 || button_index > MAX_GRID_SLOTS) continue;
-    int rendered_position = order.has_back_token ? position : position + 1;
-    if (rendered_position >= slot_limit) {
-      order.positions[position] = 0;
-      continue;
-    }
-    int &row_span = order.row_span[button_index - 1];
-    int &col_span = order.col_span[button_index - 1];
-    normalize_grid_span_for_position(rendered_position, slot_limit, cols,
-                                     row_span, col_span);
+inline void normalize_subpage_order_spans(SubpageOrder &order, int num_slots, int cols) {
+  const int count = order.half_rows ? grid_position_count(num_slots, cols) : bounded_grid_slots(num_slots);
+  auto normalize = [&](int pos, int &rs, int &cs, bool compact) {
+    int physical_rs = order.half_rows ? (compact ? 1 : rs * 2) : rs;
+    normalize_grid_span_for_position(pos, num_slots, cols, physical_rs, cs, order.half_rows);
+    rs = order.half_rows && !compact ? physical_rs / 2 : physical_rs;
+    return pos + (physical_rs - 1) * cols + cs - 1 < count;
+  };
+  if (order.has_back_token) normalize(order.back_pos, order.back_row_span, order.back_col_span, order.back_compact);
+  for (int position = 0; position < count; position++) {
+    const int idx = order.positions[position] - 1;
+    if (idx < 0 || idx >= MAX_GRID_SLOTS) continue;
+    const int rendered = order.has_back_token ? position : position + 1;
+    if (!normalize(rendered, order.row_span[idx], order.col_span[idx], order.compact[idx])) order.positions[position] = 0;
   }
 }
 

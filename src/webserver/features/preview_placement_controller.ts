@@ -5,6 +5,7 @@ export interface PreviewPlacementContext {
   readonly grid: readonly number[];
   readonly sizes: SlotSizeMap;
   readonly maxSlots: number;
+  readonly rowScale?: number;
   readonly selected: readonly number[];
 }
 
@@ -32,6 +33,7 @@ export class PreviewPlacementController {
       toPos,
       context.maxSlots,
       gridCols,
+      context.rowScale,
     );
     const unchanged = (): PreviewPlacementResult => ({
       accepted: false,
@@ -50,8 +52,8 @@ export class PreviewPlacementController {
     const targetSlot = grid[resolvedTarget] ?? 0;
     grid[resolvedTarget] = movingSlot;
     grid[fromPos] = targetSlot;
-    applySpans(grid, sizes, context.maxSlots, gridCols);
-    if ((sizes[String(movingSlot)] || 1) > 1 && !sizeFitsAt(resolvedTarget, sizes[String(movingSlot)], context.maxSlots, gridCols)) {
+    applySpans(grid, sizes, context.maxSlots, gridCols, context.rowScale);
+    if ((sizes[String(movingSlot)] || 1) > 1 && !sizeFitsAt(resolvedTarget, sizes[String(movingSlot)], context.maxSlots, gridCols, context.rowScale)) {
       delete sizes[String(movingSlot)];
     }
     return { accepted: true, grid, sizes };
@@ -72,6 +74,7 @@ export class PreviewPlacementController {
       toPos,
       context.maxSlots,
       gridCols,
+      context.rowScale,
     );
     return {
       accepted: result.accepted,

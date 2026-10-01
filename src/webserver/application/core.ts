@@ -132,11 +132,11 @@ export function createCoreFeature(
         r.setProperty("--subpage-right", scaledCqw(subpageBadge.right, scale));
         r.setProperty("--subpage-fs", scaledCqw(subpageBadge.fontSize, scale));
     }
-    function normalizeGridSpansForLayout(this: any, grid?: any, sizes?: any, maxSlots?: any, gridCols?: any, onChanged?: any) {
-        var previousOrder: any = EspControlModel.serializeGridOrder(grid, sizes || {});
+    function normalizeGridSpansForLayout(this: any, grid?: any, sizes?: any, maxSlots?: any, gridCols?: any, onChanged?: any, rowScale = 1) {
+        var previousOrder: any = EspControlModel.serializeGridOrder(grid, sizes || {}, gridCols, rowScale);
         EspControlModel.clearSpans(grid, maxSlots);
-        EspControlModel.applySpans(grid, sizes || {}, maxSlots, gridCols);
-        var normalizedOrder: any = EspControlModel.serializeGridOrder(grid, sizes || {});
+        EspControlModel.applySpans(grid, sizes || {}, maxSlots, gridCols, rowScale);
+        var normalizedOrder: any = EspControlModel.serializeGridOrder(grid, sizes || {}, gridCols, rowScale);
         if (normalizedOrder !== previousOrder && typeof onChanged === "function")
             onChanged(normalizedOrder);
         return normalizedOrder;
@@ -145,30 +145,53 @@ export function createCoreFeature(
         var layout: any = activeLayout();
         var screen: any = layout.screen || applicationLayout.config.screen;
         var scale: any = previewLayoutScale(layout);
+        const previousCols = applicationLayout.gridCols;
+        const previousMainOrder = EspControlModel.serializeGridOrder(state.grid, state.sizes, previousCols, 2);
+        const previousSubpageOrders: Record<string, string[]> = {};
+        for (const key in state.subpages) {
+            const sp = state.subpages[key];
+            if (sp?.grid?.length) previousSubpageOrders[key] = EspControlModel.serializeSubpageGrid(sp.grid, sp.sizes || {}, sp.backLabel, previousCols, 2);
+        }
         applicationLayout.gridCols = layout.cols || applicationLayout.config.cols;
         applicationLayout.gridRows = layout.rows || Math.ceil(applicationLayout.numSlots / applicationLayout.gridCols);
         var r: any = document.documentElement.style;
         r.setProperty("--screen-w", screen.width || applicationLayout.config.screen.width);
         r.setProperty("--screen-aspect", screen.aspect || applicationLayout.config.screen.aspect);
         r.setProperty("--grid-cols", "repeat(" + applicationLayout.gridCols + "," + applicationLayout.config.grid!.fr + ")");
-        r.setProperty("--grid-rows", "repeat(" + applicationLayout.gridRows + "," + applicationLayout.config.grid!.fr + ")");
+        r.setProperty("--grid-rows", "repeat(" + (applicationLayout.gridRows * 2) + "," + applicationLayout.config.grid!.fr + ")");
         syncPreviewStyleVars(layout, scale);
         var largeSensorUnitOffsetPercent: any = typeof applicationLayout.config.largeSensorUnitOffsetPercent === "number"
             ? applicationLayout.config.largeSensorUnitOffsetPercent : -10;
         r.setProperty("--large-sensor-unit-offset-y", "calc(var(--btn-icon) * 2.5 * " + (largeSensorUnitOffsetPercent / 100) + ")");
+        if (!preservePendingGrid && previousCols !== applicationLayout.gridCols) {
+            const parsed = EspControlModel.parseGridOrder(previousMainOrder, applicationLayout.numSlots, applicationLayout.gridCols, {}, 2);
+            state.grid = parsed.grid;
+            state.sizes = parsed.sizes;
+            for (const key in previousSubpageOrders) {
+                const sp = state.subpages[key];
+                if (!sp) continue;
+                const parsedSubpage = EspControlModel.buildSubpageGrid({ ...sp, order: previousSubpageOrders[key] || [] }, applicationLayout.numSlots, applicationLayout.gridCols, 2);
+                sp.grid = parsedSubpage.grid;
+                sp.sizes = parsedSubpage.sizes;
+            }
+        }
         if (!preservePendingGrid && state.grid && state.grid.length) {
-            normalizeGridSpansForLayout(state.grid, state.sizes, applicationLayout.numSlots, applicationLayout.gridCols, function (this: any, normalizedOrder?: any) {
+            normalizeGridSpansForLayout(state.grid, state.sizes, applicationLayout.gridCells, applicationLayout.gridCols, function (this: any, normalizedOrder?: any) {
                 if (runtime.orderReceived)
                     postButtonOrder(normalizedOrder);
-            });
+            }, 2);
+        }
+        if (!preservePendingGrid && runtime.orderReceived && previousCols !== applicationLayout.gridCols) {
+            const rotatedOrder = EspControlModel.serializeGridOrder(state.grid, state.sizes, applicationLayout.gridCols, 2);
+            if (rotatedOrder !== previousMainOrder) postButtonOrder(rotatedOrder);
         }
         if (!preservePendingGrid && runtime.orderReceived) {
             for (var homeSlot in state.subpages) {
                 var sp: any = state.subpages[homeSlot];
                 if (!sp || !sp.grid || !sp.grid.length)
                     continue;
-                var previousSubpageOrder: any = JSON.stringify(serializeSubpageGrid(sp));
-                normalizeGridSpansForLayout(sp.grid, sp.sizes, applicationLayout.numSlots, applicationLayout.gridCols);
+                var previousSubpageOrder: any = JSON.stringify(previousSubpageOrders[homeSlot] || serializeSubpageGrid(sp));
+                normalizeGridSpansForLayout(sp.grid, sp.sizes, applicationLayout.gridCells, applicationLayout.gridCols, undefined, 2);
                 sp.order = serializeSubpageGrid(sp);
                 if (JSON.stringify(sp.order) !== previousSubpageOrder) {
                     saveSubpage(homeSlot);
